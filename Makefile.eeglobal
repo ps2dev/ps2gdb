@@ -3,13 +3,13 @@
 EE_INCS := -I. -I$(PS2LIB)/common/include -I$(PS2LIB)/ee/include -I$(NEWLIB)/include -I$(PS2IP)/include $(EE_INCS)
 
 # C compiler flags
-EE_CFLAGS := -D_EE -fshort-double -O2 -G0 -c -Wall $(EE_INCS) $(EE_CFLAGS)
+EE_CFLAGS := -D_EE -fno-builtin -fshort-double -O2 -G0 -c -Wall $(EE_INCS) $(EE_CFLAGS)
 
 # C++ compiler flags
 EE_CXXFLAGS := $(EE_CFLAGS) $(EE_CXXFLAGS)
 
 # linker flags
-EE_LDFLAGS := -nostartfiles -Tlinkfile \
+EE_LDFLAGS := -fno-builtin -nostartfiles -Tlinkfile \
 	-L$(PS2LIB_TOP_DIR)/ee/lib $(EE_LDFLAGS)
 
 # asssembler flags
