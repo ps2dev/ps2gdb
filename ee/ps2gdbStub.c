@@ -3,7 +3,7 @@
    ____|   |    ____|      PSX2 OpenSource Project
   |     ___|   |____       (C)2003, Ray Donnelly ( rdonnelly@polygoons.com )
   --------------------------------------------------------------------------
-  gdb-low.S                PS2 REMOTE GDB STUB USING TCP
+  ps2gdbStub.c             PS2 REMOTE GDB STUB USING TCP
 */
 
 #include <tamtypes.h>
@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sifrpc.h>
 #include <loadfile.h>
 #include "ps2ip.h"
 #include "gdb-stub.h"
@@ -20,6 +19,15 @@
 
 // Some exception handlers.
 #define	exit_alarm_handler() __asm__ __volatile__(".set noreorder; sync.l; ei")
+
+// Unless you edit your gcc specs file, and change it from:-
+// *subtarget_cc1_spec:
+// 
+// To:
+// *subtarget_cc1_spec:
+// -fno-omit-frame-pointer
+// ...then you'll need to comment this out. Also, you won't get stack back tracing working correctly either!
+#define COMPILER_USES_30_AS_FP
 
 // A few options until I've figured out which works best.
 // At present, I use jal to get to handle_exception, so a normal c-style return is used to get back.
@@ -50,7 +58,7 @@
 
 #define return_handle_exception return_return
 
-//#define DEBUG
+#define DEBUG
 
 #define DEBUG_NONE			0
 #define DEBUG_READS			(1<<0)
@@ -69,7 +77,7 @@
 #define DEBUG_PRINTREGS_PRINTF 1
 
 #ifdef DEBUG
-	int debug_level_g = DEBUG_EVERYTHING;
+	int debug_level_g = DEBUG_COMMS;
 #else
 	int debug_level_g = DEBUG_NONE;
 #endif
@@ -332,6 +340,7 @@ char getDebugChar()
 		// This didn't happen until I updated to the latest versions of ps2ip & ps2lib.
 		if( !(i % 1000) )
 			printf("");
+//			strcmp( "hello", "hello" );
 	}
 
 	// Take it.
@@ -1052,22 +1061,21 @@ void handle_exception( gdb_regs_ps2 *ps2_regs )
 	ptr = mem2hex((char *)&regs->cp0_epc, ptr, 4, 0);
 	*ptr++ = ';';
 
-/*	// Our toolchain doesn't seem to use fp (or rather it uses s8 as if it were same as s0-s7). so I say that fp is just sp!
-	// Note, this would cause problems if alloca was ever used; really, we need a tool chain that uses $30 as fp and not as s8.
-
+#ifdef COMPILER_USES_30_AS_FP
 	// Send frame pointer.
 	*ptr++ = hexchars[REG_FP >> 4];
 	*ptr++ = hexchars[REG_FP & 0xf];
 	*ptr++ = ':';
 	ptr = mem2hex((char *)&regs->reg30, ptr, 4, 0);
-	*ptr++ = ';'; */
-
-	// Send stack pointer as frame pointer instead.
+	*ptr++ = ';';
+#else
+	// Send stack pointer as frame pointer instead, it's the best we can do?
 	*ptr++ = hexchars[REG_FP >> 4];
 	*ptr++ = hexchars[REG_FP & 0xf];
 	*ptr++ = ':';
 	ptr = mem2hex((char *)&regs->reg29, ptr, 4, 0);
 	*ptr++ = ';';
+#endif
 
 	// Send stack pointer.
 	*ptr++ = hexchars[REG_SP >> 4];
@@ -1412,7 +1420,7 @@ int gdbstub_init( int argc, char *argv[] )
 		else
 			SetVCommonHandler( ht->tt, trap_low );
 	}
-	alarmid_g = SetAlarm( 10000, gdbstub_shutdown_poll, NULL );
+//	alarmid_g = SetAlarm( 10000, gdbstub_shutdown_poll, NULL );
 	flush_cache_all();
 	gdbstub_initialised_g = 1;
 	printf("Waiting for remote GDB to connect\n");
@@ -1442,7 +1450,8 @@ int main( int argc, char *argv[] )
 	init_scr();
 	scr_printf( "GDB Stub Loaded\n\n" );
 #endif
-	printf( "GDB Stub Loaded ps2_regs %8x\n\n", (int)&gdbstub_ps2_regs );
+	printf( "GDB Stub Loaded\n\n" );
+	fioWrite( 1, "have that\n", 10 );
 
 	for( i = 0; i < argc; i++ )	{
 		gdbstub_printf( DEBUG_COMMSINIT, "arg %d is %s\n", i, argv[i] );
@@ -1467,11 +1476,11 @@ int main( int argc, char *argv[] )
 		breakme:		por $0,$0,$0
 						.set	reorder
 		");
-		printf("about to wait 1\n");
+		scr_printf("about to wait 1\n");
 		wait_a_while(1);
-		printf("about to wait 2\n");
+		scr_printf("about to wait 2\n");
 		wait_a_while(2);
-		printf("about to wait 3\n");
+		scr_printf("about to wait 3\n");
 		wait_a_while(3);
 	}
 
