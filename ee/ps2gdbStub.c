@@ -9,21 +9,23 @@
 #include <tamtypes.h>
 #include <kernel.h>
 #include <sifrpc.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sifrpc.h>
 #include <loadfile.h>
 #include "ps2ip.h"
 #include "gdb-stub.h"
 #include "inst.h"
 
-// Some exception handlers.
-#define	exit_alarm_handler() __asm__ __volatile__(".set noreorder; sync.l; ei")
+// This project no longer contains a main function. Instead, link it into your own project and call gdb_stub_main from your own
+// main function.
+
+// Some exception handlers. This alarm thing isn't used atm. Probably won't be either.
+#define	exit_alarm_handler() __asm__ __volatile__(".set noreorder; sync.l; ei; .set reorder")
 
 // Unless you edit your gcc specs file, and change it from:-
 // *subtarget_cc1_spec:
-// 
-// To:
+// ...to...
 // *subtarget_cc1_spec:
 // -fno-omit-frame-pointer
 // ...then you'll need to comment this out. Also, you won't get stack back tracing working correctly either!
@@ -31,34 +33,11 @@
 
 // A few options until I've figured out which works best.
 // At present, I use jal to get to handle_exception, so a normal c-style return is used to get back.
-/*
-#define return_disabling_interrupts_direct() \
-	__asm__ __volatile__(".set push\n"		\
-						 ".set noreorder\n"	\
-						 "di\n"				\
-						 "nop\n"			\
-						 "nop\n"			\
-						 "j faked_ra\n"		\
-						 "nop\n"			\
-						 "nop\n"			\
-						 ".set pop\n")
-
-#define return_direct_simple() \
-	__asm__ __volatile__(".set push\n"		\
-						 ".set noreorder\n"	\
-						 "nop\n"			\
-						 "nop\n"			\
-						 "j faked_ra\n"		\
-						 "nop\n"			\
-						 "nop\n"			\
-						 ".set pop\n")
-*/
-
 #define return_return()	return
 
 #define return_handle_exception return_return
 
-#define DEBUG
+//#define DEBUG
 
 #define DEBUG_NONE			0
 #define DEBUG_READS			(1<<0)
@@ -77,7 +56,7 @@
 #define DEBUG_PRINTREGS_PRINTF 1
 
 #ifdef DEBUG
-	int debug_level_g = DEBUG_COMMS;
+	int debug_level_g =  DEBUG_EVERYTHING;
 #else
 	int debug_level_g = DEBUG_NONE;
 #endif
@@ -194,8 +173,8 @@ int cs_g;
 int alarmid_g;
 
 // Don't want to wait around too much.
-struct timeval tv_0_g = { 0, 100 };
-struct timeval tv_1_g = { 0, 100 };
+struct timeval tv_0_g = { 0, 1 };
+struct timeval tv_1_g = { 0, 1 };
 
 
 int gdbstub_pending_recv()
@@ -322,25 +301,18 @@ static int hex(unsigned char ch)
 
 // getpacket depends on getDebugChar, but my communications happen in complete packets anyway, so this is a bit
 // round the houses, though not particularly slow.
-
 char getDebugChar()
 {
-	int i = 0;
-
 	static int recvd_chars_processed = 0;
 	static int recvd_chars = 0;
+
 	if( recvd_chars_processed < recvd_chars ) {
 		return( gdbstub_recv_buffer_g[recvd_chars_processed++] );
 	}
 
 	// Await communications.
 	while( !gdbstub_pending_recv() ) {
-		i++;
-		// For some reason, the code locks up unless occasionally I do a printf!!!
-		// This didn't happen until I updated to the latest versions of ps2ip & ps2lib.
-		if( !(i % 1000) )
-			printf("");
-//			strcmp( "hello", "hello" );
+		putchar(0);
 	}
 
 	// Take it.
@@ -354,6 +326,8 @@ char getDebugChar()
 	}
 
 	gdbstub_error( "Couldn't get a char\n" );
+
+	return 0xff;
 }
 
 
@@ -508,8 +482,23 @@ static unsigned char *mem2hex(char *mem, char *buf, int count, int may_fault)
 {
 	unsigned char ch;
 
-	flush_cache_all();
 //	set_mem_fault_trap(may_fault);
+
+	flush_cache_all();
+
+	gdbstub_printf( DEBUG_READS, "Read mem of %8x\n", mem );
+
+	if( (int)mem < 0xc0000 || (int)mem > 0x2000000 )
+	{
+		gdbstub_printf( DEBUG_READS, " Read faked due to location\n" );
+		// Prevent crash by pretending it's all zeroes.
+		while( count-- > 0 ) {
+			*buf++ = 0;
+		}
+		*buf = 0;
+
+		return buf;
+	}
 
 	while (count-- > 0) {
 		ch = *(mem++);
@@ -973,7 +962,6 @@ void set_async_breakpoint(unsigned int epc)
 	flush_cache_all();
 }
 
-
 // Normal gdb stubs execute in exception state. This one doesn't. This is because I need interrupts enabled in order to communicate
 // with remote GDB via tcpip. It's probably really slow doing it this way and I should probably figure out a way of keeping it in
 // exception state instead; serial communications??
@@ -1294,14 +1282,13 @@ void breakpoint(void)
 		return;
 	}
 
-	__asm__ __volatile__("
-			.globl	breakinst
-			.set	noreorder
-			nop
-breakinst:	break
-			nop
-			.set	reorder
-	");
+	__asm__ __volatile__("			\n"
+"			.globl	breakinst	\n"
+"			.set	noreorder	\n"
+"			nop			\n"
+"breakinst:		break			\n"
+"			nop			\n"
+"			.set	reorder		\n");
 }
 
 
@@ -1352,7 +1339,7 @@ int gdbstub_net_open()
 		disconnect( sh_g );							// Clean-up on failures.
 		return -1;
 	}
-	gdbstub_printf( DEBUG_COMMSINIT, "Listen returned %i\n", rc_listen );
+	gdbstub_printf( DEBUG_COMMSINIT, "Listen returned %i.\n", rc_listen );
 
 	remote_len = sizeof( gdb_remote_addr_g );
 	cs_g = accept( sh_g, (struct sockaddr *)&gdb_remote_addr_g, &remote_len );
@@ -1442,7 +1429,7 @@ void gdbstub_close()
 }
 
 
-int main( int argc, char *argv[] )
+int gdb_stub_main( int argc, char *argv[] )
 {
 	int i;
 
@@ -1451,7 +1438,6 @@ int main( int argc, char *argv[] )
 	scr_printf( "GDB Stub Loaded\n\n" );
 #endif
 	printf( "GDB Stub Loaded\n\n" );
-	fioWrite( 1, "have that\n", 10 );
 
 	for( i = 0; i < argc; i++ )	{
 		gdbstub_printf( DEBUG_COMMSINIT, "arg %d is %s\n", i, argv[i] );
@@ -1467,27 +1453,4 @@ int main( int argc, char *argv[] )
 		ExitDeleteThread();
 		return -1;
 	}
-
-	// This while loop is the code I've been testing on.
-	while(1) {
-		__asm__ __volatile__("
-						.globl	breakme
-						.set	noreorder
-		breakme:		por $0,$0,$0
-						.set	reorder
-		");
-		scr_printf("about to wait 1\n");
-		wait_a_while(1);
-		scr_printf("about to wait 2\n");
-		wait_a_while(2);
-		scr_printf("about to wait 3\n");
-		wait_a_while(3);
-	}
-
-	gdbstub_close();
-	if( comms_p_g )
-		comms_p_g->shutdown_have = 1;
-	gdbstub_printf( DEBUG_COMMSINIT, "Closed, set shutdown_have to 1\n" );
-	ExitDeleteThread();
-	return 0;
 }
