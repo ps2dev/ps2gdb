@@ -38,7 +38,6 @@ loop:
 	bne		$1,$0,loop
 	addiu	$2,$2,16
 
-#define CONF_R5900_BPE		(1 << 12)
 
 # Disable branch prediction on those EEs it's broken on. (EEs <= #2.5)
 	mfc0	$8,$15				# CP0_PRID
@@ -48,8 +47,8 @@ loop:
 	bne		$at, $0, 1f
 #	bgt		$8, 0x13, 1f		# 0x13: EE#2.5
 	mfc0	$8,$16				# CP0_CONFIG
-	lui		$9, %hi(~ CONF_R5900_BPE)
-	ori		$9, $9, %lo(~ CONF_R5900_BPE)
+	lui		$9, %hi(~(1<<12))
+	ori		$9, $9, %lo(~(1<<12))
 	and		$8,$8,$9
 	mtc0	$8, $16
 	sync.p
