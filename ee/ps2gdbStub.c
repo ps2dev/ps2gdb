@@ -8,12 +8,10 @@
 
 #include <tamtypes.h>
 #include <kernel.h>
-#include <sifrpc.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sifrpc.h>
-#include <loadfile.h>
-#include "ps2ip.h"
+#include <stdio.h>
+#include <debug.h>
+#include <ps2ip.h>
+#include <tcpip.h>
 #include "gdb-stub.h"
 #include "inst.h"
 
@@ -61,11 +59,9 @@
 	int debug_level_g = DEBUG_NONE;
 #endif
 
-// Comment this in if you want address errors etc (the usual ps2link suspects) to run through my handler. Some code I refered to
+// Comment this in if you want address errors etc (the usual ps2sdk suspects) to run through my handler. Some code I refered to
 // was setting our exception handler for most types of trap. I don't know why!
 //#define TRAP_ALL_EXCEPTIONS
-// TODO :: Fix ps2lib floats then get rid of this.
-#define PS2LIB_PRINTF_FLOATS_BROKEN
 #define GDB_PORT 12
 #define BP_OPC 0x0000000d
 
@@ -103,7 +99,7 @@ char gdbstub_send_buffer_g[SIZE_GDBSTUB_TCP_BUFFER];
 
 #define HOSTPATHIRX "host:"
 
-// Comms structure for ps2link and this to share information. May phase this out if the two get integrated.
+// Comms structure for ps2sdk and this to share information. May phase this out if the two get integrated.
 typedef struct _gdbstub_comms_data
 {
 	volatile int shutdown_should;
@@ -175,7 +171,6 @@ int alarmid_g;
 // Don't want to wait around too much.
 struct timeval tv_0_g = { 0, 1 };
 struct timeval tv_1_g = { 0, 1 };
-
 
 int gdbstub_pending_recv()
 {
@@ -916,21 +911,8 @@ void gdbstub_show_ps2_regs( gdb_regs_ps2 *regs, int except_num, int to_screen, i
                 regName[33],				((long*)&regs->hi)[1],					((long*)&regs->hi)[0] );
 
 	// Print out the floating point regs. There's cp1_acc as well, but I leave printing the ps2 registers at the end.
-	// TODO :: Fix float printfs in ps2lib; then use this code.
 	if( !to_screen )
 	{
-#ifndef PS2LIB_PRINTF_FLOATS_BROKEN
-		{
-			float *pf = (float*)&regs->fpr0;
-
-			for( i = 0; i < 8; i++ ) {
-				printf_p("%4s:%f       %4s:%f       %4s:%f       %4s:%f\n",	regName[38+(i*4)]    , pf[i*4],
-																			regName[38+((i*4)+1)], pf[(i*4)+1],
-																			regName[38+((i*4)+2)], pf[(i*4)+2],
-																			regName[38+((i*4)+3)], pf[(i*4)+3] );
-			}
-		}
-#else
 		{
 			int *pf = (int*)&regs->fpr0;
 
@@ -942,7 +924,6 @@ void gdbstub_show_ps2_regs( gdb_regs_ps2 *regs, int except_num, int to_screen, i
 			}
 		}
 	}
-#endif
 	printf_p("\n%4s:%08lX                           %4s:%08lX\n",		regName[70],		regs->cp1_fsr,
 																		regName[71],		regs->cp1_fir );
 }
@@ -951,7 +932,7 @@ void gdbstub_show_ps2_regs( gdb_regs_ps2 *regs, int except_num, int to_screen, i
 // If asynchronously interrupted by gdb, then we need to set a breakpoint
 // at the interrupted instruction so that we wind up stopped with a 
 // reasonable stack frame.
-// It may be time to intergrate this code with ps2link.
+// It may be time to intergrate this code with ps2sdk.
 static struct gdb_bp_save async_bp;
 
 void set_async_breakpoint(unsigned int epc)

@@ -2,19 +2,16 @@
 # Makefile template
 #
 
-PS2IP = $(PS2DEV)/ps2ip
-
-EE_BIN  = ps2gdbStub.elf
-EE_OBJS = ps2gdbStub.o gdb-low.o crt0.o
+EE_LIB  = ps2gdbStub.a
+EE_OBJS = ps2gdbStub.o gdb-low.o
 
 EE_CFLAGS +=	-g
-EE_LDFLAGS +=	-Wl,-Map,ps2gdbStub.map -L. -L../lib -L$(PS2IP)/ee/lib
+EE_LDFLAGS +=	-Wl,-Map,ps2gdbStub.map -L. -L../lib -L$(PS2SDK)/ee/lib
 
-all: $(EE_BIN)
-	ee-objdump --disassemble-all --disassemble-zeroes $(EE_BIN) > ps2gdbStub.S
-
+all: $(EE_LIB)
+	 $(EE_AR) rcs $(EE_LIB) $(EE_OBJS)
 clean:
-	rm -f *.elf *.o *.map
+	rm -f *.a *.o *.map
 
 include ../Makefile.pref
 include ../Makefile.eeglobal

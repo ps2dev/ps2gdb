@@ -1,44 +1,60 @@
+# _____     ___ ____     ___ ____
+#  ____|   |    ____|   |        | |____|
+# |     ___|   |____ ___|    ____| |    \    PS2DEV Open Source Project.
+#-----------------------------------------------------------------------
+# Copyright 2001-2004.
+# Licenced under Academic Free License version 2.0
+# Review ps2sdk README & LICENSE files for further details.
 
-# include dir
-EE_INCS := -I. -I$(PS2LIB)/common/include -I$(PS2LIB)/ee/include -I$(NEWLIB)/include -I$(PS2IP)/include $(EE_INCS)
+EE_INCS := $(EE_INCS) -I$(PS2SDK)/ee/include -I$(PS2SDK)/common/include
 
 # C compiler flags
-EE_CFLAGS := -D_EE -fno-builtin -fshort-double -O2 -G0 -c -Wall $(EE_INCS) $(EE_CFLAGS)
+EE_CFLAGS := -D_EE -O2 -G0 -Wall $(EE_CFLAGS)
 
 # C++ compiler flags
-EE_CXXFLAGS := $(EE_CFLAGS) $(EE_CXXFLAGS)
+EE_CXXFLAGS := -D_EE -O2 -G0 -Wall $(EE_CXXFLAGS)
 
-# linker flags
-EE_LDFLAGS := -fno-builtin -nostartfiles -Tlinkfile \
-	-L$(PS2LIB_TOP_DIR)/ee/lib $(EE_LDFLAGS)
+# Linker flags
+#EE_LDFLAGS := $(EE_LDFLAGS)
 
-# asssembler flags
-EE_ASFLAGS := -mcpu=r5900 -EL -G0 $(EE_ASFLAGS)
+# link with following libraries (libs need to be defined multiple times in orderr for linking to work!!) 
+EE_LIBS += -lgcc -lc -ldebug -lkernel -lc -lsyscall -lps2ip
 
-# Link with following libraries.  This is a special case, and instead of
-# allowing the user to override the library order, we always make sure
-# libkernel is the last library to be linked.
-EE_LIBS += -lkernel -lps2ip
+
+# Assembler flags
+EE_ASFLAGS := -G0 $(EE_ASFLAGS)
 
 # Externally defined variables: EE_BIN, EE_OBJS, EE_LIB
 
-%.o : %.c
-	$(EE_CC) $(EE_CFLAGS) $< -o $@
+# These macros can be used to simplify certain build rules.
+EE_C_COMPILE = $(EE_CC) $(EE_CFLAGS) $(EE_INCS)
+EE_CXX_COMPILE = $(EE_CC) $(EE_CXXFLAGS) $(EE_INCS)
 
-%.o : %.cpp
-	$(EE_CXX) $(EE_CXXFLAGS) $< -o $@
 
-%.o : %.S
-	$(EE_CC) $(EE_CFLAGS) $< -o $@
+$(EE_OBJS_DIR)%.o : $(EE_SRC_DIR)%.c
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
 
-%.o : %.s
+$(EE_OBJS_DIR)%.o : $(EE_SRC_DIR)%.cpp
+	$(EE_CXX) $(EE_CXXFLAGS) $(EE_INCS) -c $< -o $@
+
+$(EE_OBJS_DIR)%.o : $(EE_SRC_DIR)%.S
+	$(EE_CC) $(EE_CFLAGS) $(EE_INCS) -c $< -o $@
+
+$(EE_OBJS_DIR)%.o : $(EE_SRC_DIR)%.s
 	$(EE_AS) $(EE_ASFLAGS) $< -o $@
 
-# $(EE_BIN) : $(EE_OBJS) $(PS2LIB_TOP_DIR)/ee/startup/crt0.o
-#	$(EE_CC) $(EE_LDFLAGS) -o $(EE_BIN) $(PS2LIB_TOP_DIR)/ee/startup/crt0.o $(EE_OBJS) $(EE_LIBS)
+$(EE_LIB_DIR):
+	mkdir $(EE_LIB_DIR)
 
-$(EE_BIN) : $(EE_OBJS)
-	$(EE_CC) $(EE_LDFLAGS) -o $(EE_BIN) $(EE_OBJS) $(EE_LIBS)
+$(EE_BIN_DIR):
+	mkdir $(EE_BIN_DIR)
+
+$(EE_OBJS_DIR):
+	mkdir $(EE_OBJS_DIR)
+
+$(EE_BIN) : $(EE_OBJS) $(PS2SDK)/ee/startup/crt0.o
+	$(EE_CC) -nostartfiles -T$(PS2SDK)/ee/startup/linkfile $(EE_LDFLAGS) \
+		-o $(EE_BIN) $(PS2SDK)/ee/startup/crt0.o $(EE_OBJS) $(EE_LIBS)
 
 $(EE_LIB) : $(EE_OBJS)
 	$(EE_AR) cru $(EE_LIB) $(EE_OBJS)
