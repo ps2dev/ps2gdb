@@ -1,5 +1,5 @@
 set logging on /cygdrive/c/gdb.log
-symbol-file /usr/local/ps2dev/ps2gdbStub/ee/ps2gdbStub.elf
+symbol-file ee/ps2gdbStub.elf
 set endian little
 set verbose 1
 set language asm

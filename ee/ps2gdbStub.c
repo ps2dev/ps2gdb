@@ -69,7 +69,7 @@
 #define DEBUG_PRINTREGS_PRINTF 1
 
 #ifdef DEBUG
-	int debug_level_g = DEBUG_PRINTREGS;
+	int debug_level_g = DEBUG_EVERYTHING;
 #else
 	int debug_level_g = DEBUG_NONE;
 #endif
@@ -114,7 +114,7 @@ static const char hexchars[]="0123456789abcdef";
 char gdbstub_recv_buffer_g[SIZE_GDBSTUB_TCP_BUFFER];
 char gdbstub_send_buffer_g[SIZE_GDBSTUB_TCP_BUFFER];
 
-#define HOSTPATHIRX "host:\\usr\\local\\ps2dev\\irx\\"
+#define HOSTPATHIRX "host:"
 
 // Comms structure for ps2link and this to share information. May phase this out if the two get integrated.
 typedef struct _gdbstub_comms_data
@@ -186,8 +186,8 @@ int cs_g;
 int alarmid_g;
 
 // Don't want to wait around too much.
-struct timeval tv_0_g = { 0, 0 };
-struct timeval tv_1_g = { 0, 1 };
+struct timeval tv_0_g = { 0, 100 };
+struct timeval tv_1_g = { 0, 100 };
 
 
 int gdbstub_pending_recv()
@@ -317,6 +317,8 @@ static int hex(unsigned char ch)
 
 char getDebugChar()
 {
+	int i = 0;
+
 	static int recvd_chars_processed = 0;
 	static int recvd_chars = 0;
 	if( recvd_chars_processed < recvd_chars ) {
@@ -325,7 +327,11 @@ char getDebugChar()
 
 	// Await communications.
 	while( !gdbstub_pending_recv() ) {
-		;
+		i++;
+		// For some reason, the code locks up unless occasionally I do a printf!!!
+		// This didn't happen until I updated to the latest versions of ps2ip & ps2lib.
+		if( !(i % 1000) )
+			printf("");
 	}
 
 	// Take it.
@@ -1409,6 +1415,10 @@ int gdbstub_init( int argc, char *argv[] )
 	alarmid_g = SetAlarm( 10000, gdbstub_shutdown_poll, NULL );
 	flush_cache_all();
 	gdbstub_initialised_g = 1;
+	printf("Waiting for remote GDB to connect\n");
+	printf("\n");
+	printf("\n");
+
 	breakpoint();
 
 	return 0;
