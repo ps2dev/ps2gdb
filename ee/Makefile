@@ -2,7 +2,7 @@
 # Makefile template
 #
 
-EE_LIB  = ps2gdbStub.a
+EE_LIB  = ../lib/libps2gdbStub.a
 EE_OBJS = ps2gdbStub.o gdb-low.o
 
 EE_CFLAGS +=	-g
