@@ -1,0 +1,44 @@
+
+# include dir
+EE_INCS := -I. -I$(PS2LIB)/common/include -I$(PS2LIB)/ee/include -I$(NEWLIB)/include -I$(PS2IP)/include $(EE_INCS)
+
+# C compiler flags
+EE_CFLAGS := -D_EE -fshort-double -O2 -G0 -c -Wall $(EE_INCS) $(EE_CFLAGS)
+
+# C++ compiler flags
+EE_CXXFLAGS := $(EE_CFLAGS) $(EE_CXXFLAGS)
+
+# linker flags
+EE_LDFLAGS := -nostartfiles -Tlinkfile \
+	-L$(PS2LIB_TOP_DIR)/ee/lib $(EE_LDFLAGS)
+
+# asssembler flags
+EE_ASFLAGS := -mcpu=r5900 -EL -G0 $(EE_ASFLAGS)
+
+# Link with following libraries.  This is a special case, and instead of
+# allowing the user to override the library order, we always make sure
+# libkernel is the last library to be linked.
+EE_LIBS += -lkernel -lps2ip
+
+# Externally defined variables: EE_BIN, EE_OBJS, EE_LIB
+
+%.o : %.c
+	$(EE_CC) $(EE_CFLAGS) $< -o $@
+
+%.o : %.cpp
+	$(EE_CXX) $(EE_CXXFLAGS) $< -o $@
+
+%.o : %.S
+	$(EE_CC) $(EE_CFLAGS) $< -o $@
+
+%.o : %.s
+	$(EE_AS) $(EE_ASFLAGS) $< -o $@
+
+# $(EE_BIN) : $(EE_OBJS) $(PS2LIB_TOP_DIR)/ee/startup/crt0.o
+#	$(EE_CC) $(EE_LDFLAGS) -o $(EE_BIN) $(PS2LIB_TOP_DIR)/ee/startup/crt0.o $(EE_OBJS) $(EE_LIBS)
+
+$(EE_BIN) : $(EE_OBJS)
+	$(EE_CC) $(EE_LDFLAGS) -o $(EE_BIN) $(EE_OBJS) $(EE_LIBS)
+
+$(EE_LIB) : $(EE_OBJS)
+	$(EE_AR) cru $(EE_LIB) $(EE_OBJS)

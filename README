@@ -1,0 +1,60 @@
+INTRODUCTION
+----------------------------------------------------------------------------
+
+ ps2gdbStub is a tcp stub for the gnu debugger. It could be easily changed
+ to not use tcp. The low level portion reads 128 bits for the 32 gprs and
+ also for lo and hi, although these are converted down to 32 bits before
+ sending to the remote GDB.
+
+ Currently, the code *must* be uploaded via pukklink or ps2link. Naplink
+ won't do it!
+
+ As for building the remote GDB, I configured gdb as mips-idt-elf and hacked
+ about with it a bit. I managed to get the latest weekly snapshot (which at
+ time of writing was gdb+dejagnu-20030801.tar.bz2) to work, after some hacking
+ around. I've included a .cmd file for use with the remote GDB. You'll need
+ to change the target line with the correct IP of your ps2. To invoke, from
+ the shell, type <gdb -x ps2.cmd>
+
+ With reference to the frame pointer, gpr $30 should be the frame pointer,
+ this is what the MIPS abi says anyway. However, our toolchain appears to use
+ grp $30 as another saved register (s8), so I just report the fp to be the
+ same as the sp at the moment.
+
+
+COPYRIGHT FOR PS2GDBSTUB
+----------------------------------------------------------------------------
+
+ Copyright (c) 2003 Ray Donnelly (rdonnelly@polygoons.com)
+ All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+ 2. The author grants you a license to use ps2gdbStub for academic, research
+    and non-commercial purposes only.
+ 3. The author imposes no restriction on any code developed using the
+    software.  However, the author retains a non-exclusive royalty-free
+    license to any modification to the distribution made by the licensee.
+ 4. Any Licensee wishing to make commercial use of the Softare must
+    contact the author to execute the appropriate license for such 
+    commercial use.  Commercial use includes
+     - Integration of all or part of the source code into a product for sale
+       or commercial license by or on behalf Licensee to third parties, or
+     - distribution of the binary code or source code to third parites that
+       need it to utilize a commercial product sold or licensed by or on
+       behalf of Licensee.
+
+ THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND
+ ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR
+ BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ THE POSSIBILITY OF SUCH DAMAGE.
