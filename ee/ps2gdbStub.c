@@ -9,8 +9,10 @@
 #include <tamtypes.h>
 #include <kernel.h>
 #include <stdio.h>
+#include <string.h>
 #include <debug.h>
-#include <ps2ip.h>
+#include <ps2ips.h>
+#include <loadfile.h>
 #include <tcpip.h>
 #include "gdb-stub.h"
 #include "inst.h"
@@ -110,7 +112,6 @@ typedef struct _gdbstub_comms_data
 } gdbstub_comms_data;
 
 char gdbstub_exception_stack[8*1024] __attribute__((aligned(16))); // This may be needed, I don't use it at present...
-extern int _gp;
 
 gdb_regs_ps2 gdbstub_ps2_regs __attribute__((aligned(16)));
 struct gdb_regs gdbstub_regs;
@@ -1434,4 +1435,6 @@ int gdb_stub_main( int argc, char *argv[] )
 		ExitDeleteThread();
 		return -1;
 	}
+
+	return 0;
 }
