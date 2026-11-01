@@ -20,6 +20,10 @@
 #include "ps2gdb.h"
 #include "r5900-registers.h"
 #include "inst.h"
+#ifdef PS2GDB_HW_EXPERIMENTAL
+#include <ee_debug.h>
+#include "hw-debug.h"
+#endif
 
 // This project no longer contains a main function. Instead, link it into your own project and call gdb_stub_main from your own
 // main function.
@@ -84,6 +88,9 @@ static int hexToInt(char **ptr, int *intValue);
 static unsigned char *mem2hex(char *mem, char *buf, int count, int may_fault);
 void handle_exception(gdb_regs_ps2 *regs);
 static int gdbstub_net_accept();
+#ifdef PS2GDB_HW_EXPERIMENTAL
+static void hw_reset_protocol_state(void);
+#endif
 
 // These are the gdb buffers. For the tcpip comms, there are seperate buffers, which fill input_buffer and output_buffer when
 // needed.
@@ -504,7 +511,11 @@ static unsigned char *mem2hex(char *mem, char *buf, int count, int may_fault)
 
     gdbstub_printf(DEBUG_READS, "Read mem of %8x\n", mem);
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    if (!ps2gdb_hw_valid_ram_range((uint32_t)(uintptr_t)mem, (uint32_t)count)) {
+#else
     if ((int)mem < 0xc0000 || (int)mem > 0x2000000) {
+#endif
         gdbstub_printf(DEBUG_READS, " Read faked due to location\n");
         // Prevent crash by pretending it's all zeroes.
         while (count-- > 0) {
@@ -598,6 +609,15 @@ static struct gdb_bp_save
     unsigned int val;
 } step_bp[2];
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+/* Planned software step locations are patched in faked_ra only after the
+ * debugger has finished all C/library work. Crucial when the next PC is a
+ * library function (e.g. FlushCache) called by the debugger itself. */
+volatile unsigned int ps2gdb_hw_deferred_step_addr0;
+volatile unsigned int ps2gdb_hw_deferred_step_addr1;
+static int hw_plan_deferred_step;
+#endif
+
 
 // Sets breakpoint instructions for single stepping.
 static void single_step(struct gdb_regs *regs)
@@ -664,21 +684,41 @@ static void single_step(struct gdb_regs *regs)
         if (is_cond && targ != (regs->cp0_epc + 8)) {
             step_bp[i].addr                  = regs->cp0_epc + 8;
             step_bp[i++].val                 = *(unsigned *)(regs->cp0_epc + 8);
-            *(unsigned *)(regs->cp0_epc + 8) = BP_OPC;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+            if (!hw_plan_deferred_step)
+#endif
+                *(unsigned *)(regs->cp0_epc + 8) = BP_OPC;
             gdbstub_printf(DEBUG_SINGLESTEP, "hoisted %8x (epc + 8) with BP_OPC\n", regs->cp0_epc + 8);
         }
         step_bp[i].addr   = targ;
         step_bp[i].val    = *(unsigned *)targ;
-        *(unsigned *)targ = BP_OPC;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+        if (!hw_plan_deferred_step)
+#endif
+            *(unsigned *)targ = BP_OPC;
         gdbstub_printf(DEBUG_SINGLESTEP, "hoisted %8x (targ) with BP_OPC\n", targ);
     } else {
         step_bp[0].addr                  = regs->cp0_epc + 4;
         step_bp[0].val                   = *(unsigned *)(regs->cp0_epc + 4);
-        *(unsigned *)(regs->cp0_epc + 4) = BP_OPC;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+        if (!hw_plan_deferred_step)
+#endif
+            *(unsigned *)(regs->cp0_epc + 4) = BP_OPC;
         gdbstub_printf(DEBUG_SINGLESTEP, "hoisted %8x (epc + 4) with BP_OPC\n", regs->cp0_epc + 4);
     }
 }
 
+
+#ifdef PS2GDB_HW_EXPERIMENTAL
+static void hw_prepare_deferred_step(struct gdb_regs *regs)
+{
+    hw_plan_deferred_step = 1;
+    single_step(regs);
+    hw_plan_deferred_step = 0;
+    ps2gdb_hw_deferred_step_addr0 = step_bp[0].addr;
+    ps2gdb_hw_deferred_step_addr1 = step_bp[1].addr;
+}
+#endif
 
 void gdbstub_ps2regs_to_vanilla(gdb_regs_ps2 *ps2_regs, struct gdb_regs *regs)
 {
@@ -937,6 +977,46 @@ void gdbstub_show_ps2_regs(gdb_regs_ps2 *regs, int except_num, int to_screen, in
 // It may be time to intergrate this code with ps2sdk.
 static struct gdb_bp_save async_bp;
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+/* GDB owns the selected comparators. Neither comparator runs while stopped. */
+static int hw_stopped_on_break;
+static int hw_auto_continue_step;
+static int hw_last_stop_type;
+static unsigned int hw_last_stop_addr;
+
+static void hw_reset_protocol_state(void)
+{
+    memset(&ps2gdb_hw_breakpoints, 0, sizeof(ps2gdb_hw_breakpoints));
+    hw_stopped_on_break = 0;
+    hw_auto_continue_step = 0;
+    hw_last_stop_type = 0;
+    hw_last_stop_addr = 0;
+    ps2gdb_hw_pending = 0;
+    ps2gdb_hw_deferred_step_addr0 = 0;
+    ps2gdb_hw_deferred_step_addr1 = 0;
+    ps2gdb_hw_disarm();
+}
+
+/* No hardware register change is needed until execution is resumed. */
+static void hw_rsp_packet(const char *packet, char *reply)
+{
+    struct ps2gdb_hw_slot slot;
+    enum ps2gdb_hw_result result;
+    int insert;
+    result = ps2gdb_hw_parse(packet, &slot, &insert);
+    if (result == PS2GDB_HW_OK && slot.type != 1 && slot.size != 4)
+        result = PS2GDB_HW_UNSUPPORTED; /* The EE data comparator matches words. */
+    if (result == PS2GDB_HW_OK)
+        result = ps2gdb_hw_change(&ps2gdb_hw_breakpoints, &slot, insert);
+    if (result == PS2GDB_HW_OK)
+        strcpy(reply, "OK");
+    else if (result == PS2GDB_HW_INVALID || result == PS2GDB_HW_EXHAUSTED)
+        strcpy(reply, "E22");
+    else
+        reply[0] = 0; /* Unsupported or not installed. */
+}
+#endif
+
 void set_async_breakpoint(unsigned int epc)
 {
     async_bp.addr    = epc;
@@ -963,6 +1043,9 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     // Make the registers 'normal' - i.e. 32 bit. The remote GDB side never sees the 128 bit ps2_regs, only ever regs.
     // We put the changed values back just before exiting this function.
     gdbstub_ps2regs_to_vanilla(ps2_regs, regs);
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    ps2gdb_hw_disarm();
+#endif
 
     gdbstub_num_exceptions_g++;
 
@@ -977,6 +1060,25 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
 
     // Turn cop1 on if it's not being used. Hmm.
     trap = (regs->cp0_cause & 0x7c) >> 2;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    /* The L2 vector was intentionally redirected to a regular SW break.
+     * L1 trap_low captures the original full EE CPU state; only the real PC
+     * needs substituting before GDB sees this stop. */
+    if (trap == 9 && ps2gdb_hw_pending &&
+        regs->cp0_epc == (unsigned int)ps2gdb_hw_trampoline) {
+        ps2gdb_hw_pending = 0;
+        regs->cp0_epc = ps2gdb_hw_captured_epc;
+        ps2_regs->cp0_epc = regs->cp0_epc;
+        hw_stopped_on_break = 1;
+        hw_last_stop_type = 1;
+        hw_last_stop_addr = regs->cp0_epc;
+        if (ps2gdb_hw_breakpoints.data.type &&
+            (ps2gdb_hw_captured_bpc & (EE_BPC_DWB | EE_BPC_DRB))) {
+            hw_last_stop_type = ps2gdb_hw_breakpoints.data.type;
+            hw_last_stop_addr = ps2gdb_hw_breakpoints.data.address;
+        }
+    }
+#endif
     if (trap == 11) {
         gdbstub_printf(DEBUG_OTHERS, "trap is 11 (cop unused)\n");
         if (((regs->cp0_cause >> CAUSEB_CE) & 3) == 1) {
@@ -996,7 +1098,17 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
 
     // If we were single_stepping, restore the opcodes hoisted for the breakpoint(s). Conditional branch instructions place a
     // breakpoint at both the branch target and epc+8.
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    /* Internal single step: restore its temporary BREAK, rearm the hardware
+     * comparator and continue without reporting this stop to GDB. */
+    {
+        int hw_auto_step_hit = hw_auto_continue_step && trap == 9 &&
+            (regs->cp0_epc == step_bp[0].addr ||
+             (step_bp[1].addr && regs->cp0_epc == step_bp[1].addr));
+        if (step_bp[0].addr) {
+#else
     if (step_bp[0].addr) {
+#endif
         gdbstub_printf(DEBUG_SINGLESTEP, "Restoring step_bp[0] %8x (was %8x) to %8x\n", step_bp[0].addr, *(unsigned *)step_bp[0].addr, step_bp[0].val);
         *(unsigned *)step_bp[0].addr = step_bp[0].val;
         step_bp[0].addr              = 0;
@@ -1008,6 +1120,15 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
         }
         flush_cache_all();
     }
+#ifdef PS2GDB_HW_EXPERIMENTAL
+        if (hw_auto_step_hit) {
+            hw_auto_continue_step = 0;
+            ps2gdb_hw_arm();
+            goto ret;
+        }
+        hw_auto_continue_step = 0;
+    }
+#endif
 
     // If we were interrupted asynchronously by gdb, then a breakpoint was set at the EPC of the interrupt so
     // that we'd wind up here with an interesting stack frame.
@@ -1059,6 +1180,19 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     ptr += R5900_RSP_REG_HEX;
     *ptr++ = ';';
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    if (hw_last_stop_type >= 2 && hw_last_stop_type <= 4) {
+        const char *key = hw_last_stop_type == 2 ? "watch:" :
+                          hw_last_stop_type == 3 ? "rwatch:" : "awatch:";
+        while (*key) *ptr++ = *key++;
+        {   int shift;
+            for (shift = 28; shift >= 0; shift -= 4)
+                *ptr++ = hexchars[(hw_last_stop_addr >> shift) & 15];
+        }
+        *ptr++ = ';';
+    }
+    hw_last_stop_type = 0;
+#endif
     // put the packet.
     *ptr++ = 0;
     gdbstub_initialised_g == 2 ? putpacket(output_buffer) : putDebugChar('-'), gdbstub_initialised_g = 2;
@@ -1157,6 +1291,12 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
             case 'T':
                 strcpy(output_buffer, "OK");
                 break;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+            case 'Z':
+            case 'z':
+                hw_rsp_packet(input_buffer, output_buffer);
+                break;
+#endif
 
             // mAA..AA,LLLL: Read LLLL bytes at address AA..AA.
             case 'm':
@@ -1165,7 +1305,11 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' &&
                     hexToInt(&ptr2, &length) && !*ptr2 && length >= 0 &&
                     length <= (SIZE_GDBSTUB_TCP_BUFFER - 4) / 2 &&
+#ifdef PS2GDB_HW_EXPERIMENTAL
+                    ps2gdb_hw_valid_ram_range((uint32_t)addr, (uint32_t)length)) {
+#else
                     r5900_rsp_valid_ram_range((uint32_t)addr, (uint32_t)length)) {
+#endif
                     if (mem2hex((char *)addr, output_buffer, length, 1))
                         break;
                     strcpy(output_buffer, "E03");
@@ -1198,12 +1342,29 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 ptr2 = &input_buffer[1];
                 if (hexToInt(&ptr2, &addr))
                     regs->cp0_epc = addr;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+                if (hw_stopped_on_break &&
+                    regs->cp0_epc == ps2gdb_hw_captured_epc &&
+                    (ps2gdb_hw_breakpoints.instruction.type ||
+                     ps2gdb_hw_breakpoints.data.type)) {
+                    /* Let the interrupted instruction run once with BPC
+                     * disabled; rearm after its temporary SW step trap. */
+                    hw_prepare_deferred_step(regs);
+                    hw_auto_continue_step = 1;
+                } else {
+                    ps2gdb_hw_arm();
+                }
+                hw_stopped_on_break = 0;
+#endif
                 goto ret;
                 break;
 
             // Detach without killing the EE program or resetting the IOP.
             case 'D':
                 putpacket("OK");
+#ifdef PS2GDB_HW_EXPERIMENTAL
+                hw_reset_protocol_state();
+#endif
                 gdbstub_net_disconnect();
                 goto ret;
 
@@ -1218,7 +1379,12 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
             // Single step.
             case 's':
                 // There is no single step insn in the MIPS ISA, so uses break instead.
+#ifdef PS2GDB_HW_EXPERIMENTAL
+                hw_stopped_on_break = 0;
+                hw_prepare_deferred_step(regs);
+#else
                 single_step(regs);
+#endif
                 goto ret;
 
             // Set baud rate (bBB) - I've kept this here in case anyone wants to have a go at communicating some other way.
@@ -1386,6 +1552,12 @@ static int gdbstub_net_accept()
         return -1;
     }
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    /* A new GDB owns a fresh hardware-breakpoint selection. In particular,
+     * discard stale Z packets from an abnormally disconnected debugger. */
+    if (gdbstub_connection_generation)
+        hw_reset_protocol_state();
+#endif
     gdbstub_connection_generation++;
     FD_ZERO(&comms_fd_g);
     FD_SET(cs_g, &comms_fd_g);
@@ -1428,6 +1600,10 @@ int gdbstub_init(int argc, char *argv[])
         else
             SetVCommonHandler(ht->tt, trap_low);
     }
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    hw_reset_protocol_state();
+    if (!ps2gdb_hw_install()) return -1;
+#endif
     flush_cache_all();
     gdbstub_initialised_g = 1;
     gdbstub_printf(DEBUG_COMMS, "Waiting for remote GDB to connect\n\n\n");
@@ -1440,6 +1616,9 @@ int gdbstub_init(int argc, char *argv[])
 
 void gdbstub_close()
 {
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    ps2gdb_hw_close();
+#endif
     gdbstub_net_close();
     gdbstub_initialised_g = 0;
 

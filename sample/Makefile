@@ -8,6 +8,10 @@ EE_OBJS = testgdb.o
 EE_CFLAGS += -g -w
 EE_INCS += -I../ee
 EE_LIBS = -ldebug -lps2gdbStub -lps2ips
+ifeq ($(PS2GDB_HW_EXPERIMENTAL),1)
+    EE_CFLAGS += -DPS2GDB_HW_EXPERIMENTAL
+    EE_LIBS += -leedebug
+endif
 EE_LDFLAGS += -L../lib
 
 all:

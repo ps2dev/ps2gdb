@@ -47,13 +47,34 @@ Compatibility and limitations:
     bits when the debugger edits those registers but does not yet expose
     their values through a custom GDB target description.
   * Only one EE execution context is exposed to GDB. IOP debugging, full
-    EE thread enumeration, asynchronous Ctrl-C while executing, and hardware
-    watchpoints are not implemented here.
+    EE thread enumeration, and asynchronous Ctrl-C while executing are not
+    implemented here. EE hardware breakpoints/watchpoints require explicit
+    experimental opt-in, as documented below.
   * The memory service currently restricts remote accesses to safe
     ordinary EE RAM; arbitrary MMIO and privileged memory require a
     separate debugger design. Software breakpoints are supported via
     GDB's memory-write fallback.
   * The legacy PS2IPS/PS2Link network setup is still a prerequisite.
+
+Experimental EE hardware breakpoints and watchpoints (opt-in only):
+  make clean
+  make PS2GDB_HW_EXPERIMENTAL=1 all
+
+The sample automatically links libeedebug in this configuration. Other
+projects must link -leedebug after -lps2gdbStub and -lps2ips. GNU GDB can
+send Z1 hardware instruction breakpoints, Z2 write watchpoints, Z3 read
+watchpoints and Z4 access watchpoints; the EE has one instruction comparator
+and one shared data comparator. The experimental implementation only accepts
+aligned 4-byte data comparator requests. On real hardware, cached reads may
+bypass the read comparator (uncached reads and cache-miss reads were verified).
+
+The non-experimental build does not install a level-2 debug exception vector
+or accept Z1-Z4 packets. The opt-in implementation remains under active
+investigation: a simultaneous instruction/data comparator test hit a
+branch-delay-slot watchpoint and hung before resuming. A deferred-step patch
+has been cross-compiled but needs real-console retesting before considering
+this mode stable. Do not use it as a default debugging workflow yet.
+See docs/EE_HARDWARE_DEBUG_INVESTIGATION.md for full test and safety details.
 
 CI validation (no physical PS2 required):
   make clean all check check-gdb check-install
@@ -63,7 +84,9 @@ GitHub Actions additionally runs the native C tests under GCC and Clang with
 AddressSanitizer/UndefinedBehaviorSanitizer, exercises real TCP/RSP packets
 (fragmentation, malformed data, register writes, disconnect/reconnect),
 verifies staging the library and public header into an SDK-style prefix,
-and cross-compiles the EE debug configuration. The native mock is not the
+and cross-compiles the EE debug and opt-in hardware configurations. The
+hardware diagnostic variants are only cross-compiled, never executed by CI.
+The native mock is not the
 PS2-side exception handler, so real-hardware breakpoints and trap recovery
 still require separate PS2 validation.
 

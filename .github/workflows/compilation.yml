@@ -41,6 +41,22 @@ jobs:
             sample/*.elf
             sample/*.irx
 
+  hardware-experimental-build:
+    name: EE experimental hardware GDB build (opt-in)
+    runs-on: ubuntu-latest
+    container: ghcr.io/ps2dev/ps2dev:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: apk add build-base git
+      - name: Cross-compile experimental debugger and GDB test target
+        run: |
+          make clean
+          make PS2GDB_HW_EXPERIMENTAL=1 all
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'ps2gdb_hw_trampoline'
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_word'
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_function'
+
   native-tests:
     name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)
     runs-on: ubuntu-latest

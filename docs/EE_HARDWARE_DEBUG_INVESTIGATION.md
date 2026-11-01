@@ -192,13 +192,12 @@ Real PS2 results, both with and without a C callback inside level 2:
 - The 128-bit GPR snapshot preserved the original stack pointer.
 - Both tests completed with `status=0` and PS2Link still responsive.
 
-This proves a **minimal** exception-state handoff is feasible without
-performing TCP calls in level 2. It is not yet wired to PS2GDB's
-`trap_low` or remote GDB, and it leaves the hardware comparator disabled
-for the rest of the probe. Before production use we must implement the
-continue/step state machine, rearm **after** the original instruction,
-restore all remaining EE state and handle more complex branch, delay slot,
-reconnection, and failure paths. Do not advertise support prematurely.
+This isolated diagnostic proves a **minimal** exception-state handoff
+without TCP calls in level 2. The later opt-in GDB implementation uses
+that technique with the existing `trap_low` and supports continue/step and
+rearm in the real debugger (see below). It is not enabled in ordinary
+builds; complex branch/delay-slot and concurrent comparator interactions
+still require validation.
 
 For a compile-only integration of all opt-in variants (never executing the
 ELFs), run:
@@ -209,3 +208,94 @@ make hardware-probe-variants-build
 
 The compilation script runs multiple builds with different explicit flags
 and always restores the safe non-triggering default probe afterward.
+
+## Experimental remote-GDB integration (opt-in)
+
+The EE hardware-debug exception path can now be cross-built as an **opt-in**
+GDB implementation, without changing the ordinary PS2GDB build:
+
+```sh
+make clean
+make PS2GDB_HW_EXPERIMENTAL=1 all
+```
+
+A separately compiled `hw-exception.S` installs a 32-byte exception-vector
+trampoline and captures the original `ErrorEPC` and BPC status before
+redirecting to a software-break instruction. The existing level-1
+`trap_low` saves the normal EE register context and moves into the
+interruptible GDB packet loop. The experimental stub supports GDB `Z1`
+through `Z4` and corresponding removals. Data comparator requests other
+than aligned 4-byte words are not accepted by this experimental path;
+cache-hot reads may not trigger the physical comparator.
+
+The experimental sample links the SDK's `libeedebug` using the **public**
+comparator APIs, rather than relying on SDK's full level-2 exception
+handler (which previously hung in isolated probes). Projects that opt into
+the experimental stub must link `-leedebug` in addition to the normal
+PS2GDB/PS2IPS libraries. The `gdb_hw_test_word` global and
+`gdb_hw_test_function` test function are compiled only with the flag.
+
+On the physical PS2 at `192.168.31.10`, real GNU R5900 GDB confirmed:
+
+- `hbreak *0x129600`: stopped at the requested instruction; `continue`
+  reached a later software breakpoint at `0x129618`.
+- `watch gdb_hw_test_word`: two consecutive writes were reported as
+  **old 0 → new 11** and **old 11 → new 22**, respectively. The internal
+  software single-step restored the original instruction, rearmed BPC,
+  and did not create an extra user-visible stop.
+- `hbreak gdb_hw_test_function`: the hardware breakpoint fired on both
+  consecutive function invocations (`PC=0x104188` twice), confirming
+  hardware instruction-comparator rearming.
+- `stepi` after a hardware breakpoint reached the next instruction
+  (`PC=0x10418c`), followed by another genuine hardware stop on the next
+  function invocation.
+- Native GDB `maintenance packet` requests confirmed duplicate insertion
+  returns `OK`, a second distinct instruction breakpoint returns `E22`,
+  data comparator exhaustion also returns `E22`, and removals return `OK`.
+- GDB detach completed normally after each experiment; PS2Link was still
+  responsive, without resetting the IOP or exiting the test ELF.
+
+These are narrow but genuine end-to-end tests. The feature remains
+**experimental**, pending cases not yet tested: branch-delay-slot
+continuations, stepping across software-breakpoint collisions, concurrent
+instruction/data comparisons, reconnection with active breakpoints, and
+reliable cache-hit read watchpoints. Read watchpoints are fundamentally
+cache-sensitive on this hardware. Ordinary builds intentionally do not
+install or advertise this hardware exception handler.
+
+## Unresolved interaction and deferred rearm fix (requires retest)
+
+A real-GDB test with the instruction comparator on
+`gdb_hw_test_function` and a simultaneous write watchpoint on
+`gdb_hw_test_word` produced three expected stops: two function entries,
+then the first write (`0 → 11`). A subsequent `continue` timed out and
+PS2Link stopped responding at `192.168.31.10`. The PS2 needs a physical
+restart before another hardware test. **Do not claim concurrent comparators
+are validated yet.**
+
+Disassembly of the affected test showed that GCC scheduled the **second**
+watched store into the delay slot of a `jal FlushCache` instruction. The
+EE's hardware-debug `Cause.BD2` flag indicates exceptions in delay slots,
+and `ErrorEPC` points at the preceding branch instruction in that case
+(see the EE architecture documentation at
+https://psi-rockin.github.io/ps2tek/).
+
+The investigation also exposed a concrete self-breakpoint hazard in the
+original automatic-rearm path: `single_step()` patched the branch target
+with a temporary software `break` **during** the GDB packet loop. The
+loop later called the public `FlushCache()` implementation at the same
+address, which could trigger its own breakpoint before the debugged
+program resumed. This is a strong explanation of the observed hang, but
+has **not yet been experimentally proven** as its unique root cause.
+
+The experimental implementation now stages the intended breakpoint
+addresses in `ps2gdb_hw_deferred_step_addr0/1`, leaving the instructions
+untouched throughout the C GDB loop. The final low-level return path in
+`gdb-low.S` applies the temporary `break` opcodes **after the C loop
+finishes**, then uses its existing direct kernel cache-flush syscalls to
+synchronize instruction memory before restoring the EE registers and
+executing `eret`. This prevents GDB's own C-side `FlushCache()` call from
+running over a temporary breakpoint that is already installed. The
+assembly build/disassembly has been checked, but real-PS2 validation is
+still required. The experimental level-2 handler also now captures the
+original CP0 `Cause` for checking `BD2` on the next controlled test.
