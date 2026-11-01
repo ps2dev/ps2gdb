@@ -1,8 +1,7 @@
 #include <stdio.h>
 #include <debug.h>
 #include <kernel.h>
-
-int gdb_stub_main(int argc, char *argv[]);
+#include <ps2gdb.h>
 
 int main(int argc, char *argv[])
 {

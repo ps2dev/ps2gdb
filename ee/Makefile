@@ -6,6 +6,7 @@ DEBUG ?= 0
 EE_LIB_DIR = ../lib/
 EE_LIB  = $(EE_LIB_DIR)libps2gdbStub.a
 EE_OBJS = ps2gdbStub.o gdb-low.o
+PS2GDB_INSTALL_PREFIX ?= $(PS2SDK)/ports
 
 EE_CFLAGS += -g -w
 # -DDEBUG
@@ -23,7 +24,9 @@ debug:
 	$(MAKE) DEBUG=1 all
 
 install: all
-	cp -f $(EE_LIB) $(PS2SDK)/ports/lib
+	install -d "$(PS2GDB_INSTALL_PREFIX)/lib" "$(PS2GDB_INSTALL_PREFIX)/include"
+	install -m 644 $(EE_LIB) "$(PS2GDB_INSTALL_PREFIX)/lib/"
+	install -m 644 ps2gdb.h "$(PS2GDB_INSTALL_PREFIX)/include/"
 
 clean:
 	rm -rf $(EE_OBJS) $(EE_LIB) $(EE_LIB_DIR)

@@ -6,6 +6,7 @@ EE_BIN = testgdb.elf
 EE_OBJS = testgdb.o
 
 EE_CFLAGS += -g -w
+EE_INCS += -I../ee
 EE_LIBS = -ldebug -lps2gdbStub -lps2ips
 EE_LDFLAGS += -L../lib
 
