@@ -11,9 +11,14 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server
+check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test
 	./tests/r5900_rsp_test
 	./tests/registers_test
+	sh tests/check_protocol.sh
+
+check-install:
+	$(MAKE) -C ee
+	sh tests/check_install.sh
 
 check-gdb: tests/mock_rsp_server
 	$(MAKE) -C ee
@@ -26,6 +31,9 @@ tests/r5900_rsp_test: tests/r5900_rsp_test.c ee/r5900-rsp.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
 tests/registers_test: tests/registers_test.c ee/r5900-registers.h ee/r5900-rsp.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
+tests/rsp_protocol_test: tests/rsp_protocol_test.c ee/r5900-rsp.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
 tests/mock_rsp_server: tests/mock_rsp_server.c ee/r5900-registers.h ee/r5900-rsp.h
@@ -41,4 +49,4 @@ install:
 clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server
+	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test

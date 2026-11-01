@@ -55,6 +55,18 @@ Compatibility and limitations:
     GDB's memory-write fallback.
   * The legacy PS2IPS/PS2Link network setup is still a prerequisite.
 
+CI validation (no physical PS2 required):
+  make clean all check check-gdb check-install
+  make clean debug
+
+GitHub Actions additionally runs the native C tests under GCC and Clang with
+AddressSanitizer/UndefinedBehaviorSanitizer, exercises real TCP/RSP packets
+(fragmentation, malformed data, register writes, disconnect/reconnect),
+verifies staging the library and public header into an SDK-style prefix,
+and cross-compiles the EE debug configuration. The native mock is not the
+PS2-side exception handler, so real-hardware breakpoints and trap recovery
+still require separate PS2 validation.
+
 To verify the host-side wire format with an installed EE GDB without a PS2:
   make check
   ./tests/mock_rsp_server 21599 &

@@ -13,3 +13,4 @@
 tests/r5900_rsp_test
 tests/registers_test
 tests/mock_rsp_server
+tests/rsp_protocol_test
