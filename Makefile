@@ -21,6 +21,10 @@ check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp
 hardware-probe-build:
 	$(MAKE) -C tests/hardware clean all
 
+# Diagnostic macros compile only; the script restores a non-triggering ELF.
+hardware-probe-variants-build:
+	sh tests/hardware/check_variants.sh
+
 check-install:
 	$(MAKE) -C ee
 	sh tests/check_install.sh

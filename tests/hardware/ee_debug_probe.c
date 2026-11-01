@@ -22,6 +22,9 @@
 #if defined(PS2GDB_PROBE_READ_UNCACHED) && !defined(PS2GDB_PROBE_READ)
 #error PS2GDB_PROBE_READ_UNCACHED requires PS2GDB_PROBE_READ
 #endif
+#if defined(PS2GDB_PROBE_L1_HANDOFF) && !defined(PS2GDB_PROBE_MINIMAL_VECTOR)
+#error PS2GDB_PROBE_L1_HANDOFF requires PS2GDB_PROBE_MINIMAL_VECTOR
+#endif
 
 static volatile unsigned int watched_word;
 static volatile unsigned int observed_word;
@@ -43,6 +46,13 @@ static volatile unsigned int last_debug_bpc;
 volatile unsigned int ps2gdb_probe_debug_hits;
 volatile unsigned int ps2gdb_probe_debug_error_epc;
 volatile unsigned int ps2gdb_probe_debug_cause;
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+extern void ps2gdb_probe_l1_handler(void);
+extern void ps2gdb_probe_l1_breakpoint(void);
+volatile unsigned int ps2gdb_probe_l1_hits;
+volatile unsigned int ps2gdb_probe_l1_epc;
+volatile unsigned int ps2gdb_probe_l1_cause;
+#endif
 /* Optional diagnostic 128-bit GPR capture before the ERET return. */
 u128 ps2gdb_probe_gpr_snapshot[32] __attribute__((aligned(16)));
 #ifdef PS2GDB_PROBE_CALL_C
@@ -99,6 +109,10 @@ int main(void)
     fflush(stdout);
     if (ee_dbg_install(2) == 0) {
         unsigned int armed_bpc, armed_dab, armed_dabm;
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+        void *old_break_handler = GetExceptionHandler(9);
+        SetVCommonHandler(9, (void *)ps2gdb_probe_l1_handler);
+#endif
         printf("PS2GDB_HW_PROBE_VECTOR status=%08x DEV=%u\n",
                read_ee_status(), !!(read_ee_status() & (1u << 23)));
         fflush(stdout);
@@ -171,6 +185,11 @@ int main(void)
              watched_word == 42 &&
 #endif
              debug_hits == 1 &&
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+             ps2gdb_probe_l1_hits == 1 &&
+             ps2gdb_probe_l1_epc == (unsigned int)ps2gdb_probe_l1_breakpoint &&
+             M_EE_GET_CAUSE_EXCODE(ps2gdb_probe_l1_cause) == 9 &&
+#endif
              M_EE_GET_CAUSE_EXC2(last_debug_cause) == EE_EXC2_DBG;
 #elif defined(PS2GDB_PROBE_TRIGGER)
         ok = (debug_hits == 1 && watched_word == 42 &&
@@ -180,7 +199,16 @@ int main(void)
 #endif
         ee_dbg_clr_bps();
         ee_dbg_remove(2);
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+        if (old_break_handler)
+            SetVCommonHandler(9, old_break_handler);
+#endif
     }
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+    printf("PS2GDB_HW_PROBE_L1 hits=%u epc=%08x cause=%08x\n",
+           ps2gdb_probe_l1_hits, ps2gdb_probe_l1_epc,
+           ps2gdb_probe_l1_cause);
+#endif
     printf("PS2GDB_HW_PROBE_DONE status=%d hits=%u watched=%u observed=%u errorepc=%08x cause=%08x bpc=%08x savedsp=%08x\n",
            ok ? 0 : 1, debug_hits, watched_word, observed_word,
            last_debug_error_epc, last_debug_cause, last_debug_bpc,

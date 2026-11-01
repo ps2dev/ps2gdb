@@ -107,15 +107,22 @@ returns via `eret`. Each test explicitly enabled `PS2GDB_PROBE_TRIGGER`
 and `PS2GDB_PROBE_MINIMAL_VECTOR`, with PS2Link ping and host-side EE reset
 between independent test executions. No IOP reset or EE program exit occurred.
 
-| Experiment | Physical PS2 result | PS2Link after |
-| --- | --- | --- |
-| Cached write comparator | One debug exception, `ErrorEPC=0x001020a8`, `Cause=0x30038020`, observed value 42 | Responsive |
-| Cached read, already hot in D-cache | **No exception**; read returned 42 | Responsive |
-| Uncached read, using SDK `UNCACHED_SEG` RAM alias | One debug exception, read returned 42 | Responsive |
-| Cached read after `FlushCache(0)` | One debug exception, read returned 42 | Responsive |
-| Instruction comparator at the target function entry | One debug exception, `ErrorEPC` matched the function entry (`0x00101dbc`) | Responsive |
-| Full 128-bit GPR snapshot through `sq` to aligned RAM | One debug exception, captured a valid aligned SP (`0x01ffecf0`); original store resumed correctly | Responsive |
-| Minimal level-2 C callback on a separate 4 KiB stack, followed by GPR restoration | Callback executed once and the interrupted store resumed correctly | Responsive |
+All experiments below left PS2Link responsive afterward:
+
+- **Cached write:** one debug exception, `ErrorEPC=0x001020a8`,
+  `Cause=0x30038020`; the write completed and the value became 42.
+- **Hot cached read:** no debug exception; the read returned 42.
+- **Uncached read:** one debug exception using the SDK's `UNCACHED_SEG`
+  RAM alias; the read returned 42.
+- **Cached read after `FlushCache(0)`:** one debug exception; the read
+  returned 42.
+- **Instruction comparator:** one debug exception at the target function
+  entry (`ErrorEPC=0x00101dbc`).
+- **128-bit GPR capture:** one debug exception; the `sq` snapshot preserved
+  an aligned stack pointer (`0x01ffecf0`), and the original store resumed.
+- **Minimal C callback:** invoked once on a separate 4 KiB stack inside
+  level 2, then returned after restoring all 128-bit GPRs. The interrupted
+  store resumed correctly.
 
 The initially failed instruction-comparator probe had a **test assertion
 mistake**: it expected `watched_word=42`, although that probe does not
@@ -164,3 +171,44 @@ with interrupts enabled, and rearms the hardware comparator *after* the
 interrupted instruction has executed. Do not enable production `Z1`–`Z4`
 or mark PR #11 ready until this behavior is proven on hardware and under
 real GNU GDB.
+
+
+## Level-2-to-level-1 handoff validated (192.168.31.10)
+
+One additional, **opt-in diagnostic-only** mode was implemented:
+`PS2GDB_PROBE_L1_HANDOFF`. Before arming a hardware comparator, it installs
+an independent level-1 handler for software `break` exceptions (cause 9).
+On the hardware debug exception, the level-2 assembly routine records the
+**original** `ErrorEPC`, disables BPC, and points `ErrorEPC` at a static
+software `break` trampoline. `eret` then raises an ordinary level-1
+exception. The level-1 handler records its `EPC` and `Cause`, restores the
+original instruction address to CP0.EPC, and returns with `eret`. The
+program's original store runs once with its hardware comparator disabled.
+The earlier exception handler is restored on probe completion.
+
+Real PS2 results, both with and without a C callback inside level 2:
+
+- Exactly one level-2 exception (`Cause=0x30038020`).
+- Exactly one level-1 software-break exception (`Cause=0x30038024`).
+- The level-1 `EPC` matched the static break trampoline address.
+- The original instruction resumed and wrote the expected value (42).
+- The 128-bit GPR snapshot preserved the original stack pointer.
+- Both tests completed with `status=0` and PS2Link still responsive.
+
+This proves a **minimal** exception-state handoff is feasible without
+performing TCP calls in level 2. It is not yet wired to PS2GDB's
+`trap_low` or remote GDB, and it leaves the hardware comparator disabled
+for the rest of the probe. Before production use we must implement the
+continue/step state machine, rearm **after** the original instruction,
+restore all remaining EE state and handle more complex branch, delay slot,
+reconnection, and failure paths. Do not advertise support prematurely.
+
+For a compile-only integration of all opt-in variants (never executing the
+ELFs), run:
+
+```sh
+make hardware-probe-variants-build
+```
+
+The compilation script runs multiple builds with different explicit flags
+and always restores the safe non-triggering default probe afterward.

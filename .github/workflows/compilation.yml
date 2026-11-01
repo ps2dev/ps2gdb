@@ -19,7 +19,7 @@ jobs:
 
       - name: Compile and test (PS2, protocol, GDB and install)
         run: |
-          make clean all check check-gdb check-install hardware-probe-build
+          make clean all check check-gdb check-install hardware-probe-build hardware-probe-variants-build
 
       - name: Upload sample
         if: ${{ success() }}

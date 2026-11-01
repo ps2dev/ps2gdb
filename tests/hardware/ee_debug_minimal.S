@@ -79,6 +79,13 @@ ps2gdb_probe_record_handler:
     la $k1, ps2gdb_probe_debug_cause
     sw $k0, 0($k1)
 
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+    /* ERET now goes to a safe software BREAK trampoline, not the faulting SW. */
+    la $k0, ps2gdb_probe_l1_breakpoint
+    mtc0 $k0, $30
+    sync.p
+#endif
+
 #ifdef PS2GDB_PROBE_CALL_C
     /* Switch to a dedicated aligned stack before any C call. */
     la $sp, ps2gdb_probe_exception_stack + 4096
@@ -124,4 +131,39 @@ ps2gdb_probe_record_handler:
     eret
     nop
     nop
+
+#ifdef PS2GDB_PROBE_L1_HANDOFF
+.balign 32
+.globl ps2gdb_probe_l1_breakpoint
+ps2gdb_probe_l1_breakpoint:
+    break
+    nop
+    nop
+
+/* The kernel invokes this for level-1 exception code 9. No C/IOP/TCP. */
+.balign 32
+.globl ps2gdb_probe_l1_handler
+ps2gdb_probe_l1_handler:
+    sq $k0, -32($sp)
+    sq $k1, -16($sp)
+    la $k1, ps2gdb_probe_l1_hits
+    lw $k0, 0($k1)
+    addiu $k0, $k0, 1
+    sw $k0, 0($k1)
+    mfc0 $k0, $14
+    la $k1, ps2gdb_probe_l1_epc
+    sw $k0, 0($k1)
+    mfc0 $k0, $13
+    la $k1, ps2gdb_probe_l1_cause
+    sw $k0, 0($k1)
+    la $k1, ps2gdb_probe_debug_error_epc
+    lw $k0, 0($k1)
+    mtc0 $k0, $14
+    sync.p
+    lq $k1, -16($sp)
+    lq $k0, -32($sp)
+    eret
+    nop
+    nop
+#endif
 .set pop
