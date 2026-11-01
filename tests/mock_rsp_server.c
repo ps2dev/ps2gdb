@@ -57,7 +57,7 @@ static int reply_packet(int fd, const char *data)
 {
     char packet[4096];
     unsigned int checksum = 0;
-    size_t i, length = strlen(data);
+    size_t i, length = r5900_rsp_bounded_length(data, sizeof(packet) - 3);
     if (length + 5 > sizeof(packet)) return -1;
     packet[0] = '$';
     for (i = 0; i < length; i++) {
@@ -118,7 +118,8 @@ int main(int argc, char **argv)
                 r5900_rsp_register_value(&frame, &regs, index));
         else if (request[0] == 'P') {
             char *equals = strchr(request, '=');
-            if (equals && strlen(equals+1) == 16) {
+            if (equals && r5900_rsp_bounded_length(equals+1,
+                sizeof(request) - (equals + 1 - request)) == 16) {
                 *equals = 0;
                 if (r5900_rsp_parse_regno(request+1, &index) &&
                     index < R5900_RSP_REG_COUNT &&

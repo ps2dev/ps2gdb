@@ -44,6 +44,15 @@ static inline int r5900_rsp_decode_u64(const char *source, uint64_t *value)
     return 1;
 }
 
+/* A bounded string length helper for untrusted RSP data and test frames. */
+static inline size_t r5900_rsp_bounded_length(const char *data, size_t capacity)
+{
+    size_t i;
+    for (i = 0; i < capacity; i++)
+        if (data[i] == '\0') return i;
+    return capacity;
+}
+
 static inline int r5900_rsp_valid_hex(const char *data, unsigned int characters)
 {
     unsigned int i;

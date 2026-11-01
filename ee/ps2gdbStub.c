@@ -361,13 +361,11 @@ static void gdbstub_net_disconnect(void)
 /* Return an unsigned byte, or -1 on a connection transition. */
 int getDebugChar(void)
 {
-    int count;
-
     if (recv_buf_pos < recv_buf_len)
         return (unsigned char)gdbstub_recv_buffer_g[recv_buf_pos++];
 
     if (cs_g >= 0) {
-        count = recv(cs_g, gdbstub_recv_buffer_g,
+        int count = recv(cs_g, gdbstub_recv_buffer_g,
                      SIZE_GDBSTUB_TCP_BUFFER, 0);
         if (count > 0) {
             recv_buf_len = count;
@@ -406,13 +404,13 @@ int putDebugChar(char c)
 // be much of a speed issue with getpacket!
 static void getpacket(char *buffer)
 {
-    int ch, i, hi, lo;
-    unsigned int session;
+    int ch, i, lo;
     unsigned char checksum;
-    int count, overflow;
+    int overflow;
 
     for (;;) {
-        session = gdbstub_connection_generation;
+        unsigned int session = gdbstub_connection_generation;
+        int count = 0;
         do {
             ch = getDebugChar();
             if (session != gdbstub_connection_generation)
@@ -420,13 +418,12 @@ static void getpacket(char *buffer)
         } while (ch != '$');
 
         checksum = 0;
-        count = 0;
         overflow = 0;
         for (;;) {
             ch = getDebugChar();
             if (session != gdbstub_connection_generation) break;
             if (ch == '#') {
-                hi = getDebugChar();
+                int hi = getDebugChar();
                 lo = getDebugChar();
                 if (session != gdbstub_connection_generation) break;
                 hi = hex((unsigned char)hi);
@@ -461,7 +458,7 @@ static void putpacket(char *buffer)
     int i, length, retry, ack;
     unsigned int generation;
 
-    length = strlen(buffer);
+    length = r5900_rsp_bounded_length(buffer, SIZE_GDBSTUB_TCP_BUFFER - 3);
     if (length > SIZE_GDBSTUB_TCP_BUFFER - 4) {
         gdbstub_error("oversized GDB reply (%d bytes)\n", length);
         return;
@@ -1100,7 +1097,7 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 break;
 
             case 'G':
-                if (strlen(input_buffer + 1) != R5900_RSP_ALL_HEX ||
+                if (r5900_rsp_bounded_length(input_buffer + 1, BUFMAX - 1) != R5900_RSP_ALL_HEX ||
                     !r5900_rsp_decode_registers(input_buffer + 1, ps2_regs, regs))
                     strcpy(output_buffer, "E01");
                 else
@@ -1122,7 +1119,9 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 unsigned int number;
                 uint64_t value;
                 char *equals = strchr(input_buffer + 1, '=');
-                if (!equals || strlen(equals + 1) != R5900_RSP_REG_HEX) {
+                if (!equals ||
+                    r5900_rsp_bounded_length(equals + 1,
+                        BUFMAX - (equals + 1 - input_buffer)) != R5900_RSP_REG_HEX) {
                     strcpy(output_buffer, "E01");
                     break;
                 }
@@ -1181,7 +1180,9 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' &&
                     hexToInt(&ptr2, &length) && length >= 0 &&
                     r5900_rsp_valid_ram_range((uint32_t)addr, (uint32_t)length) &&
-                    *ptr2++ == ':' && strlen(ptr2) == (size_t)length * 2 &&
+                    *ptr2++ == ':' &&
+                    r5900_rsp_bounded_length(ptr2,
+                        BUFMAX - (ptr2 - input_buffer)) == (size_t)length * 2 &&
                     r5900_rsp_valid_hex(ptr2, length * 2)) {
                     if (hex2mem(ptr2, (char *)addr, length, 1))
                         strcpy(output_buffer, "OK");

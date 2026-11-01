@@ -32,7 +32,7 @@ int main(void)
     r5900_rsp_set_low64(&frame.hi, 0x1122334455667788ULL);
 
     r5900_rsp_encode_registers(reply, &frame, &registers);
-    check(strlen(reply) == R5900_RSP_ALL_HEX, "GDB 17 expects exactly 1440 hex chars");
+    check(r5900_rsp_bounded_length(reply, sizeof(reply)) == R5900_RSP_ALL_HEX, "GDB 17 expects exactly 1440 hex chars");
     check(r5900_rsp_decode_u64(reply + 29*16, &value) &&
           value == 0x123456789abcdef0ULL, "GPR29 preserves 64-bit value");
     check(r5900_rsp_decode_u64(reply + 32*16, &value) &&
