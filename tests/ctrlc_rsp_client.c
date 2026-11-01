@@ -40,10 +40,13 @@ static int send_packet(const char *text)
 {
     unsigned char sum = 0;
     char trailer[3];
-    const unsigned char *p;
-    for (p = (const unsigned char *)text; *p; ++p) sum += *p;
+    size_t n, i;
+    const size_t max_command = 63;
+    n = strnlen(text, max_command + 1);
+    if (n > max_command) return 0;
+    for (i = 0; i < n; ++i) sum += (unsigned char)text[i];
     snprintf(trailer, sizeof(trailer), "%02x", sum);
-    if (!send_all("$", 1) || !send_all(text, strlen(text)) ||
+    if (!send_all("$", 1) || !send_all(text, n) ||
         !send_all("#", 1) || !send_all(trailer, 2)) return 0;
     /* First stop may emit a legacy '-' before the initial RSP ACK. */
     {
