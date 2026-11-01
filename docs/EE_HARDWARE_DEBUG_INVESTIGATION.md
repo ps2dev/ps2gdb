@@ -299,7 +299,6 @@ assembly build/disassembly has been checked, but real-PS2 validation is
 still required. The experimental level-2 handler also now captures the
 original CP0 `Cause` for checking `BD2` on the next controlled test.
 
-
 ## Retest after restart — combined stop still hangs
 
 After the PS2 was restarted at `192.168.31.10`, the first GDB connection
