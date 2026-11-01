@@ -46,6 +46,20 @@ static inline int ps2gdb_hw_parse_hex(const char **input, uint32_t *result)
     return 1;
 }
 
+/* EE direct-mapped RAM aliases also support uncached / uncached-accelerated
+ * access. Keep the original virtual address in the comparator: only normalize
+ * for range validation. Read hits depend on cache behavior on real hardware.
+ */
+static inline int ps2gdb_hw_valid_ram_range(uint32_t address, uint32_t length)
+{
+    uint32_t physical = address;
+    if (address >= 0x20000000u && address < 0x22000000u)
+        physical = address - 0x20000000u;
+    else if (address >= 0x30000000u && address < 0x32000000u)
+        physical = address - 0x30000000u;
+    return r5900_rsp_valid_ram_range(physical, length);
+}
+
 /* Parse Ztype,addr,kind or ztype,addr,kind, without modifying any state. */
 static inline enum ps2gdb_hw_result ps2gdb_hw_parse(const char *packet,
                                                      struct ps2gdb_hw_slot *slot,
@@ -71,7 +85,7 @@ static inline enum ps2gdb_hw_result ps2gdb_hw_parse(const char *packet,
     } else if ((length != 1 && length != 2 && length != 4) ||
                (address & (length - 1)))
         return PS2GDB_HW_UNSUPPORTED;
-    if (!r5900_rsp_valid_ram_range(address, length))
+    if (!ps2gdb_hw_valid_ram_range(address, length))
         return PS2GDB_HW_UNSUPPORTED;
     slot->type = type;
     slot->address = address;

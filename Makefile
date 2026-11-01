@@ -19,7 +19,7 @@ check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp
 
 # Builds the EE hardware exception probe but never runs it automatically.
 hardware-probe-build:
-	$(MAKE) -C tests/hardware
+	$(MAKE) -C tests/hardware clean all
 
 check-install:
 	$(MAKE) -C ee

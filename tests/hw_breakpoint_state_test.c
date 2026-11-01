@@ -49,6 +49,16 @@ int main(void)
           "reject malformed suffix");
     check(ps2gdb_hw_parse("Z2,100000000,4", &other, &insert) == PS2GDB_HW_INVALID,
           "reject 32-bit address overflow");
+    check(ps2gdb_hw_parse("Z3,20120000,4", &other, &insert) == PS2GDB_HW_OK &&
+          other.address == 0x20120000u, "accept real-hardware uncached RAM read alias");
+    check(ps2gdb_hw_parse("Z2,30120000,4", &other, &insert) == PS2GDB_HW_OK &&
+          other.address == 0x30120000u, "preserve uncached accelerated RAM alias");
+    check(ps2gdb_hw_parse("Z3,21fffffc,4", &other, &insert) == PS2GDB_HW_OK,
+          "allow aligned last word in uncached RAM");
+    check(ps2gdb_hw_parse("Z3,22000000,4", &other, &insert) == PS2GDB_HW_UNSUPPORTED,
+          "reject addresses outside uncached RAM");
+    check(ps2gdb_hw_parse("Z3,300bffff,1", &other, &insert) == PS2GDB_HW_UNSUPPORTED,
+          "reject low memory outside application RAM alias");
     check(ps2gdb_hw_parse("Z", &other, &insert) == PS2GDB_HW_INVALID,
           "reject empty comparator packet");
     check(ps2gdb_hw_parse("Z2", &other, &insert) == PS2GDB_HW_INVALID,
