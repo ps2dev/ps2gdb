@@ -28,6 +28,15 @@ ps2gdb_probe_record_handler:
     sync.p
     sq $k0, -32($sp)
     sq $k1, -16($sp)
+#ifdef PS2GDB_PROBE_BD2
+    /* Comparator is disabled; capture memory before returning to ErrorEPC.
+     * This distinguishes a post-retirement watchpoint from a pre-store one. */
+    la $k1, ps2gdb_probe_watched_ptr
+    lw $k0, 0($k1)
+    lw $k0, 0($k0)
+    la $k1, ps2gdb_probe_value_at_exception
+    sw $k0, 0($k1)
+#endif
 
 #ifdef PS2GDB_PROBE_SAVE_GPRS
     /* Snapshot the real 128-bit EE GPRs before clobbering k1. */

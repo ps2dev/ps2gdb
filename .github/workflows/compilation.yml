@@ -56,6 +56,7 @@ jobs:
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'ps2gdb_hw_trampoline'
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_word'
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_function'
+          sh tests/check_hw_direct_cache_flush.sh sample/testgdb.elf
 
   native-tests:
     name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)

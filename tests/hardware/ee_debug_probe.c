@@ -54,6 +54,10 @@ static volatile unsigned int last_debug_bpc;
 volatile unsigned int ps2gdb_probe_debug_hits;
 volatile unsigned int ps2gdb_probe_debug_error_epc;
 volatile unsigned int ps2gdb_probe_debug_cause;
+#ifdef PS2GDB_PROBE_BD2
+volatile unsigned int *ps2gdb_probe_watched_ptr = &watched_word;
+volatile unsigned int ps2gdb_probe_value_at_exception;
+#endif
 #ifdef PS2GDB_PROBE_L1_HANDOFF
 extern void ps2gdb_probe_l1_handler(void);
 extern void ps2gdb_probe_l1_breakpoint(void);
@@ -227,9 +231,10 @@ int main(void)
            ps2gdb_probe_l1_cause);
 #endif
 #ifdef PS2GDB_PROBE_BD2
-    printf("PS2GDB_HW_PROBE_BD2 expected_epc=%08x observed_epc=%08x bd2=%u\n",
+    printf("PS2GDB_HW_PROBE_BD2 expected_epc=%08x observed_epc=%08x bd2=%u value_at_exception=%u\n",
            (unsigned int)ps2gdb_probe_bd2_branch,
-           last_debug_error_epc, !!(last_debug_cause & EE_CAUSE_BD2));
+           last_debug_error_epc, !!(last_debug_cause & EE_CAUSE_BD2),
+           ps2gdb_probe_value_at_exception);
 #endif
     printf("PS2GDB_HW_PROBE_DONE status=%d hits=%u watched=%u observed=%u errorepc=%08x cause=%08x bpc=%08x savedsp=%08x\n",
            ok ? 0 : 1, debug_hits, watched_word, observed_word,

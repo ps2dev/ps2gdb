@@ -261,8 +261,29 @@ static int recv_buf_len;
 
 void flush_cache_all()
 {
+#ifdef PS2GDB_HW_EXPERIMENTAL
+    /* A software single-step breakpoint may temporarily replace the first
+     * instruction of the public FlushCache wrapper. Never call that wrapper
+     * from the debugger while handling the resulting BREAK exception: doing
+     * so would trap recursively before step_bp[] can be restored.
+     * Use the EE kernel's cache-flush syscalls directly instead. */
+    __asm__ __volatile__(
+        ".set push\n\t"
+        ".set noreorder\n\t"
+        "li $3, 0x64\n\t"
+        "move $4, $zero\n\t"
+        "syscall\n\t"
+        "nop\n\t"
+        "li $3, 0x64\n\t"
+        "li $4, 2\n\t"
+        "syscall\n\t"
+        "nop\n\t"
+        ".set pop\n\t"
+        : : : "$2", "$3", "$4", "memory");
+#else
     FlushCache(0);
     FlushCache(2);
+#endif
 }
 
 

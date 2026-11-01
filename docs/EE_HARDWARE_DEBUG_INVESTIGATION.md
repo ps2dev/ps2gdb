@@ -334,3 +334,51 @@ to the level-2 delay-slot handoff or specific to the real GDB stop/rearm
 state machine. Only after the independent BD2 probe passes should the
 combined GDB comparator test be attempted again. It is not safe to mark
 this PR ready yet.
+
+## Real BD2 probe and GDB `FlushCache` recursion root cause
+
+The console was restarted at `192.168.31.10`. On the physical EE, the
+isolated opt-in `PS2GDB_PROBE_BD2` probe **passed**:
+
+- `ErrorEPC` matched the deliberate JAL at `0x0010254c`, with `Cause.BD2=1`.
+- One level-2 debug exception and one level-1 software BREAK occurred.
+- The watched word was 42 after resumption (`status=0`).
+- PS2Link remained responsive.
+
+A follow-up test captured the watched word **inside** the level-2 handler,
+after disabling BPC but **before** returning to `ErrorEPC`. At that point
+the value was still **0**; after replay it was **42**. This establishes
+that this hardware watchpoint is *pre-store*: the delayed store must execute
+after the trap. Simply jumping directly to the JAL target would skip the
+watched write and is incorrect.
+
+Next, GDB was tested with **only an instruction hardware breakpoint** at
+the `jal FlushCache` instruction (`0x001298bc`). The initial hardware stop
+worked, but `stepi` into the `FlushCache` target hung the console, **even
+without any data watchpoint active**. This rules out simultaneous
+hardware comparators as necessary for that particular failure.
+
+Inspection of the existing C stub revealed a concrete recursion mechanism:
+
+1. Software single-step puts a temporary `break` at the branch target,
+   which in this case is the **first instruction of `FlushCache`**.
+2. When the application reaches that temporary breakpoint, `trap_low`
+   calls `handle_exception()` to service the stop.
+3. **At the beginning of `handle_exception()`, before removing the step
+   breakpoint**, the debugger invokes its own `flush_cache_all()` helper.
+4. That helper used `FlushCache(0)` and `FlushCache(2)` through the same
+   public wrapper whose first instruction was still a `break`. This can
+   recursively re-enter the exception handler, causing a hang.
+
+The opt-in implementation of `flush_cache_all()` now executes syscall
+`0x64` directly for cache operations 0 and 2, matching the EE kernel ABI,
+without invoking the public wrapper. The ordinary PS2GDB build retains
+its existing implementation. The new function was cross-compiled and its
+assembly inspected: it contains exactly two direct `syscall` instructions
+and no call to `FlushCache`.
+
+**Hardware retest of the direct-syscall fix is still pending.** PS2Link was
+unresponsive following the isolated `stepi` failure. The next test should
+start with `hbreak` at `jal FlushCache` and `stepi`, checking for a clean
+stop at the target. Only after that passes should the complete combined
+instruction/data breakpoint test run again. No IOP reset should be used.
