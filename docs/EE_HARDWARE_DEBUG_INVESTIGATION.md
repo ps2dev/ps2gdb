@@ -1,4 +1,4 @@
-# EE hardware breakpoints and watchpoints — investigation
+**EE hardware breakpoints and watchpoints — investigation**
 
 This is experimental groundwork, **not** an enabled RSP feature. GDB's
 `Z1`/`z1` (instruction comparator) and `Z2`–`Z4` (shared data comparator)
@@ -33,15 +33,30 @@ no code resets the IOP, exits to OSD, or attempts IOP synchronization.
 - With the BPC state returned by `ee_dbg_set_bpw`, the program completed but
   the watchpoint did **not** trigger (`hits=0`, `watched=42`). The BPC snapshot
   was `0x203d8000`, including `EE_BPC_BED` (breakpoint exception disable).
-- After explicitly clearing `EE_BPC_BED`, the probe reached the armed state
-  but then hung before emitting the completion marker. PS2Link stopped
-  responding; a host-side reset did not recover it. **Physical console
-  recovery is required before any further real-hardware experiments.**
+- After explicitly clearing `EE_BPC_BED` with the unmodified PS2SDK
+  level-2 handler, the probe hung. PS2Link stopped responding and host-side
+  reset could not recover it.
+- After a physical restart, a minimal level-2 assembly vector that simply
+  disables BPC and uses `eret` successfully handled the watchpoint: the
+  probe completed with BPC cleared and PS2Link remained responsive.
+  The saved CPU state was not yet inspected in that first minimal test.
+- The captured original `Status` was `0x70030c11` (`DEV=0`), so the CPU
+  selected the normal level-2 vector at `0x80000100`, not the BIOS vector.
+- A **temporary** copy of PS2SDK `libeedebug`, rebuilt outside the repo with
+  its `$k0` emergency save redirected from `-0x20($zero)` to
+  `-0x20($sp)`, still hung in the full level-2 handler. Therefore this
+  suspected assembly problem alone is **not** proven to explain the hang.
+  It would be premature to submit that specific change as an SDK fix.
+  PS2Link again requires a physical restart for further hardware tests.
 - Running the same ELF in PCSX2 produced no watchpoint and reported
   inconsistent values for BPC, DAB and DABM; that emulation result must
   **not** be treated as validation of actual EE debug exceptions.
 
-The exact cause of the hang has **not** been established. Possible areas to
+The exact cause of the full-handler hang has **not** been established.
+The diagnostic-only minimal assembly handler has since been extended to
+record Cause and ErrorEPC after disabling comparators, without calling C;
+**that extended handler has only been compiled, not yet retested on real
+hardware**. Possible areas to
 investigate include the level-2 handler's frame/return behavior, the BPC
 re-enable sequence, and compiler-generated accesses during the exception.
 Do not label the PS2SDK behavior a proven upstream defect based only on
@@ -69,5 +84,10 @@ Before enabling production `Z1`–`Z4`:
 5. Add real-GDB tests of `hbreak`, `watch`, `rwatch`, and `awatch`, including
    removal, reconnect/detach cleanup, and resource-exhaustion reporting.
 
-**Safety:** `tests/hardware/ee_debug_probe.elf` can hang a real console.
-Do not run it automatically or repeat it without controlled recovery.
+**Safety:** Only the default `make hardware-probe-build` is safe and it
+**does not trigger** hardware exceptions. Enabling the trigger requires
+explicitly compiling with `PS2GDB_PROBE_TRIGGER`; adding
+`PS2GDB_PROBE_MINIMAL_VECTOR` switches to the narrow diagnostic handler.
+The full PS2SDK exception handler has hung twice on the physical console;
+never run that configuration automatically. Require an orderly recovery
+plan and host-side PS2Link ping before any opt-in trigger test.
