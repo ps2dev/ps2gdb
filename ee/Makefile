@@ -6,6 +6,10 @@ DEBUG ?= 0
 EE_LIB_DIR = ../lib/
 EE_LIB  = $(EE_LIB_DIR)libps2gdbStub.a
 EE_OBJS = ps2gdbStub.o gdb-low.o
+ifeq ($(PS2GDB_HW_EXPERIMENTAL),1)
+    EE_OBJS += hw-debug.o hw-exception.o
+    EE_CFLAGS += -DPS2GDB_HW_EXPERIMENTAL
+endif
 PS2GDB_INSTALL_PREFIX ?= $(PS2SDK)/ports
 
 EE_CFLAGS += -g -w

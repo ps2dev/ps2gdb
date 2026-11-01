@@ -187,6 +187,30 @@ faked_epc:
 faked_ra:
 		di
 
+#ifdef PS2GDB_HW_EXPERIMENTAL
+        // Install the deferred one-shot SW step only *after* the C debugger
+        // has stopped calling host libraries. The following syscalls flush
+        // newly patched code before we restore the interrupted EE context.
+        // In particular, patching FlushCache() inside handle_exception()
+        // would cause a recursive breakpoint during its own cache flush.
+        la      k0,ps2gdb_hw_deferred_step_addr0
+        lw      k1,0(k0)
+        sw      zero,0(k0)
+        beqz    k1,1f
+        nop
+        li      v0,0x0000000d
+        sw      v0,0(k1)
+1:
+        la      k0,ps2gdb_hw_deferred_step_addr1
+        lw      k1,0(k0)
+        sw      zero,0(k0)
+        beqz    k1,2f
+        nop
+        li      v0,0x0000000d
+        sw      v0,0(k1)
+2:
+#endif
+
 		li	$3, 0x64
 		move	$4,$0
 		syscall							// FlushCache(0) - Writeback data cache
