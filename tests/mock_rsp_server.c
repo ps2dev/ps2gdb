@@ -72,14 +72,14 @@ static int reply_packet(int fd, const char *data)
 
 int main(int argc, char **argv)
 {
-    int listener, client, option = 1;
+    int listener, option = 1, session, session_count;
     struct sockaddr_in addr;
     gdb_regs_ps2 frame;
     struct gdb_regs regs;
     char request[4096], response[R5900_RSP_ALL_HEX + 1];
     uint64_t val;
-    if (argc != 2) {
-        fprintf(stderr, "Usage: mock_rsp_server <port>\n");
+    if (argc != 2 && argc != 3) {
+        fprintf(stderr, "Usage: mock_rsp_server <port> [sessions]\n");
         return 2;
     }
     memset(&frame, 0, sizeof(frame));
@@ -97,46 +97,57 @@ int main(int argc, char **argv)
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (bind(listener, (struct sockaddr *)&addr, sizeof(addr)) < 0 ||
         listen(listener, 1) < 0) return 4;
-    client = accept(listener, NULL, NULL);
-    if (client < 0) return 5;
-    for (;;) {
-        unsigned int index;
-        if (receive_packet(client, request, sizeof(request)) < 0) break;
-        response[0] = 0;
-        if (!strncmp(request, "qSupported", 10)) strcpy(response, "PacketSize=800");
-        else if (!strcmp(request, "?")) strcpy(response, "S05");
-        else if (!strcmp(request, "qAttached")) strcpy(response, "1");
-        else if (!strcmp(request, "qC")) strcpy(response, "QC1");
-        else if (!strcmp(request, "qfThreadInfo")) strcpy(response, "m1");
-        else if (!strcmp(request, "qsThreadInfo")) strcpy(response, "l");
-        else if (!strncmp(request, "qOffsets", 8)) strcpy(response, "Text=0;Data=0;Bss=0");
-        else if (!strcmp(request, "g"))
-            r5900_rsp_encode_registers(response, &frame, &regs);
-        else if (request[0] == 'p' && r5900_rsp_parse_regno(request+1, &index) &&
-                 index < R5900_RSP_REG_COUNT)
-            r5900_rsp_encode_u64(response,
-                r5900_rsp_register_value(&frame, &regs, index));
-        else if (request[0] == 'P') {
-            char *equals = strchr(request, '=');
-            if (equals && r5900_rsp_bounded_length(equals+1,
-                sizeof(request) - (equals + 1 - request)) == 16) {
-                *equals = 0;
-                if (r5900_rsp_parse_regno(request+1, &index) &&
-                    index < R5900_RSP_REG_COUNT &&
-                    r5900_rsp_decode_u64(equals+1, &val)) {
-                    r5900_rsp_set_register(&frame, &regs, index, val);
+    session_count = argc == 3 ? atoi(argv[2]) : 1;
+    if (session_count < 1 || session_count > 10) return 6;
+    for (session = 0; session < session_count; session++) {
+        int client = accept(listener, NULL, NULL);
+        if (client < 0) return 5;
+        for (;;) {
+            unsigned int index;
+            if (receive_packet(client, request, sizeof(request)) < 0) break;
+            response[0] = 0;
+            if (!strncmp(request, "qSupported", 10)) strcpy(response, "PacketSize=7fc");
+            else if (!strcmp(request, "?")) strcpy(response, "S05");
+            else if (!strcmp(request, "qAttached")) strcpy(response, "1");
+            else if (!strcmp(request, "qC")) strcpy(response, "QC1");
+            else if (!strcmp(request, "qfThreadInfo")) strcpy(response, "m1");
+            else if (!strcmp(request, "qsThreadInfo")) strcpy(response, "l");
+            else if (!strncmp(request, "qOffsets", 8)) strcpy(response, "Text=0;Data=0;Bss=0");
+            else if (!strcmp(request, "g"))
+                r5900_rsp_encode_registers(response, &frame, &regs);
+            else if (request[0] == 'G') {
+                if (r5900_rsp_bounded_length(request + 1, sizeof(request) - 1) ==
+                        R5900_RSP_ALL_HEX &&
+                    r5900_rsp_decode_registers(request + 1, &frame, &regs))
                     strcpy(response, "OK");
+                else
+                    strcpy(response, "E01");
+            } else if (request[0] == 'p' && r5900_rsp_parse_regno(request+1, &index) &&
+                     index < R5900_RSP_REG_COUNT)
+                r5900_rsp_encode_u64(response,
+                    r5900_rsp_register_value(&frame, &regs, index));
+            else if (request[0] == 'P') {
+                char *equals = strchr(request, '=');
+                if (equals && r5900_rsp_bounded_length(equals+1,
+                    sizeof(request) - (equals + 1 - request)) == 16) {
+                    *equals = 0;
+                    if (r5900_rsp_parse_regno(request+1, &index) &&
+                        index < R5900_RSP_REG_COUNT &&
+                        r5900_rsp_decode_u64(equals+1, &val)) {
+                        r5900_rsp_set_register(&frame, &regs, index, val);
+                        strcpy(response, "OK");
+                    } else strcpy(response, "E01");
                 } else strcpy(response, "E01");
-            } else strcpy(response, "E01");
-        } else if (request[0] == 'H' || request[0] == 'T') strcpy(response, "OK");
-        else if (request[0] == 'm') strcpy(response, "E03");
-        else if (request[0] == 'D') {
-            reply_packet(client, "OK");
-            break;
-        }
-        if (reply_packet(client, response) < 0) break;
+            } else if (request[0] == 'H' || request[0] == 'T') strcpy(response, "OK");
+            else if (request[0] == 'm') strcpy(response, "E03");
+            else if (request[0] == 'D') {
+                reply_packet(client, "OK");
+                break;
+            }
+            if (reply_packet(client, response) < 0) break;
     }
-    close(client);
+        close(client);
+    }
     close(listener);
     return 0;
 }

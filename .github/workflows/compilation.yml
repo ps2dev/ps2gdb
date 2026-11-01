@@ -17,9 +17,9 @@ jobs:
         run: |
           apk add build-base git
 
-      - name: Compile and test (PS2 + native C)
+      - name: Compile and test (PS2, protocol, GDB and install)
         run: |
-          make clean all check check-gdb
+          make clean all check check-gdb check-install
 
       - name: Upload sample
         if: ${{ success() }}
@@ -40,3 +40,32 @@ jobs:
           files: |
             sample/*.elf
             sample/*.irx
+
+  native-tests:
+    name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test register and TCP/RSP helpers with sanitizers
+        env:
+          HOST_CC: ${{ matrix.compiler }}
+          HOST_CFLAGS: -std=c99 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: make check
+
+  debug-build:
+    name: EE debugger build (DEBUG=1)
+    runs-on: ubuntu-latest
+    container: ghcr.io/ps2dev/ps2dev:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: apk add build-base git
+      - name: Clean EE debug build
+        run: make clean debug
