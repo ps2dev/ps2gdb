@@ -72,7 +72,7 @@ static int reply_packet(int fd, const char *data)
 
 int main(int argc, char **argv)
 {
-    int listener, client, option = 1, session, session_count;
+    int listener, option = 1, session, session_count;
     struct sockaddr_in addr;
     gdb_regs_ps2 frame;
     struct gdb_regs regs;
@@ -100,7 +100,7 @@ int main(int argc, char **argv)
     session_count = argc == 3 ? atoi(argv[2]) : 1;
     if (session_count < 1 || session_count > 10) return 6;
     for (session = 0; session < session_count; session++) {
-        client = accept(listener, NULL, NULL);
+        int client = accept(listener, NULL, NULL);
         if (client < 0) return 5;
         for (;;) {
             unsigned int index;
