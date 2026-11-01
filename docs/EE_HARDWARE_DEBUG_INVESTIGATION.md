@@ -1,11 +1,46 @@
 <!-- markdownlint-configure-file { "MD043": false } -->
 # EE hardware breakpoints and watchpoints — investigation
 
-This is experimental groundwork, **not** an enabled RSP feature. GDB's
-`Z1`/`z1` (instruction comparator) and `Z2`–`Z4` (shared data comparator)
-remain unsupported by the production `ps2gdbStub.c` until real-hardware
-exception recovery works. In particular, do **not** advertise or acknowledge
-hardware breakpoints before the hardware comparator is actually armed.
+## Current result (physical EE, 2026-11-01)
+
+**The opt-in `PS2GDB_HW_EXPERIMENTAL=1` GDB hardware-debug feature has passed
+its previously blocking real-console regressions.** Standard builds do
+not install the level-2 vector or enable `Z1`–`Z4`. This document retains
+chronological investigation notes (including older failures) below.
+
+- GDB `hbreak` at a `jal FlushCache` executed `stepi` successfully,
+  stopping at `FlushCache` (`0x00117910`), then detached cleanly.
+- With **both** EE hardware comparators active, real GDB stopped twice
+  on the hardware function breakpoint and detected both watched stores:
+  `0 → 11` and `11 → 22`. The latter store is in a JAL delay slot.
+- After the second watchpoint, GDB `stepi` advanced from `0x00117910`
+  to `0x00117914`, reporting a final watched value of 22.
+- GDB removed both hardware comparators, inserted a different instruction
+  comparator, reinserted the data comparator, and removed them again.
+  Each `Z1/Z2/z1/z2` packet returned `OK`.
+- Every final test detached normally and PS2Link remained responsive at
+  `192.168.31.10`. No IOP reset or exit to OSD was used.
+
+**Root cause of the reproduced stepping hang:** the debugger's cache
+helper called `FlushCache()` while a temporary software-step breakpoint
+still replaced the first instruction of that wrapper. This recursively
+trapped the debugger. The experimental `flush_cache_all()` now performs
+two direct EE cache syscalls, and both the isolated and combined GDB
+retests succeeded. An opt-in CI disassembly check prevents reintroducing
+the wrapper call.
+
+Remaining limits: one instruction and one shared data comparator;
+aligned 4-byte data requests only; cached reads can escape hardware
+read-watchpoint detection; other exceptional control flows remain
+unvalidated. **This is reviewable as an opt-in experimental feature,
+not a claim of complete production-grade debugger coverage.**
+
+## Historical investigation notes
+
+Initially, the hardware GDB integration was not enabled. The sections
+below document the incremental probes, failures, and fixes that led to
+this opt-in implementation. Results described as "pending" were pending
+at the time; the current outcome is recorded above.
 
 ## Existing PS2SDK support
 
@@ -53,15 +88,10 @@ no code resets the IOP, exits to OSD, or attempts IOP synchronization.
   inconsistent values for BPC, DAB and DABM; that emulation result must
   **not** be treated as validation of actual EE debug exceptions.
 
-The exact cause of the full-handler hang has **not** been established.
-The diagnostic-only minimal assembly handler has since been extended to
-record Cause and ErrorEPC after disabling comparators, without calling C;
-**that extended handler has only been compiled, not yet retested on real
-hardware**. Possible areas to
-investigate include the level-2 handler's frame/return behavior, the BPC
-re-enable sequence, and compiler-generated accesses during the exception.
-Do not label the PS2SDK behavior a proven upstream defect based only on
-these observations.
+The exact cause of the *PS2SDK full-handler* hang has **not** been
+established. Subsequent tests successfully captured Cause and ErrorEPC
+through a separate minimal assembly handler, as documented below. This
+does not demonstrate a specific PS2SDK defect.
 
 ## Safe tests and next steps
 

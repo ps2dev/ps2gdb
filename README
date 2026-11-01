@@ -69,18 +69,18 @@ aligned 4-byte data comparator requests. On real hardware, cached reads may
 bypass the read comparator (uncached reads and cache-miss reads were verified).
 
 The non-experimental build does not install a level-2 debug exception vector
-or accept Z1-Z4 packets. In an isolated real-PS2 test, the branch-delay-slot
-watchpoint passed with correct BD2 and ErrorEPC; a snapshot confirmed that
-the watched store had not yet executed at the exception. The subsequent
-GDB single-step failure was reproduced with only an instruction breakpoint
-at `jal FlushCache`: the debugger's own cache helper called the patched
-`FlushCache` wrapper before removing the temporary step breakpoint.
-The experimental debugger now uses direct EE cache-flush syscalls to avoid
-this recursion. This change has compiled but still needs a real-PS2
-retest before the feature can be considered stable. Separately, PS2IPS
-was observed to stall on a 1,440-byte register reply; the experimental
-sender uses 256-byte TCP writes, verified on real PS2. Do not use this
-mode as the default debugging workflow yet.
+or accept Z1-Z4 packets. On a physical PS2, the opt-in integration has now
+passed concurrent `hbreak` and `watch` stops, two consecutive watched writes
+(including a store in a JAL delay slot), `stepi` into the `FlushCache`
+function and a further `stepi` after the second watched write. GDB also
+removed and reallocated both hardware comparators, detached successfully,
+and left PS2Link responsive. The earlier debugger recursion was fixed by
+using direct EE kernel cache-flush syscalls instead of invoking a patched
+`FlushCache` wrapper; CI checks the generated code for this property.
+The experimental TCP sender uses 256-byte writes to avoid a PS2IPS large
+packet stall, also verified on hardware. This mode remains opt-in: cache-hit
+reads may not trigger read watchpoints, and other EE exception situations
+and multiple threads are not comprehensively covered.
 See docs/EE_HARDWARE_DEBUG_INVESTIGATION.md for full test and safety details.
 
 CI validation (no physical PS2 required):
