@@ -72,6 +72,8 @@ jobs:
           make PS2GDB_CTRL_C_COOPERATIVE=1 all
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdbstub_poll_interrupt'
           gcc -std=c99 -Wall -Wextra -Werror tests/ctrlc_rsp_client.c -o /tmp/ctrlc_rsp_client
+          make clean
+          make PS2GDB_CTRL_C_COOPERATIVE=1 PS2GDB_HW_EXPERIMENTAL=1 all
 
   native-tests:
     name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)

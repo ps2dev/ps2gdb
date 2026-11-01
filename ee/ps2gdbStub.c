@@ -1692,8 +1692,6 @@ void gdbstub_poll_interrupt(void)
 #ifdef PS2GDB_CTRL_C_COOPERATIVE
     unsigned char ch;
     unsigned int now;
-    fd_set readfds;
-    struct timeval no_wait = {0, 0};
     int count;
 
     if (!gdbstub_initialised_g || !gdbstub_running_g || cs_g < 0)
@@ -1705,13 +1703,9 @@ void gdbstub_poll_interrupt(void)
         return;
     gdbstub_last_poll_count = now;
 
-    /* A zero-timeout select is required: do not call recv on an empty
-     * socket. MSG_DONTWAIT is a second guard against unexpected blocking. */
-    FD_ZERO(&readfds);
-    FD_SET(cs_g, &readfds);
-    if (select(cs_g + 1, &readfds, NULL, NULL, &no_wait) != 1 ||
-        !FD_ISSET(cs_g, &readfds))
-        return;
+    /* PS2SDK select() returned -1 on every poll in real EE testing. Use
+     * MSG_DONTWAIT directly, with the CP0 Count rate limiter above to
+     * prevent tight-loop EE/IOP network RPC overload. */
     count = recv(cs_g, &ch, 1, MSG_DONTWAIT);
     if (count == 1 && ch == 0x03) {
         gdbstub_running_g = 0;

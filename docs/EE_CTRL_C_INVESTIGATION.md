@@ -34,14 +34,46 @@ stop. PS2Link became unresponsive. Continuous EE-to-IOP network requests may
 have overwhelmed PS2IPS; whether the nonblocking flag was also involved is
 unproven.
 
-The revised code adds a CP0 Count-based minimum polling interval, a
-zero-timeout `select()` readiness check before `recv()`, and a
-`DelayThread(10000)` yield in the sample. **This revision has not yet been
-physically retested; a PS2Link restart is required first.**
+The first revised build added a CP0 Count-based minimum polling interval,
+a zero-timeout `select()` and a yielding sample. The initial Ctrl-C still
+timed out, but PS2Link stayed responsive. Real-EE diagnostic counters showed
+that the sample called the poller hundreds of times; `select()` returned
+`-1` **every time**, so the poller never attempted to receive the Ctrl-C.
+
+Replacing the failing `select()` with a rate-limited
+`recv(MSG_DONTWAIT)` **passed on a real PS2**: the manual C RSP client
+received two `T02` stop packets after two independent continue/Ctrl-C
+cycles, detached successfully, and PS2Link remained responsive at
+`192.168.31.10`. The poller's temporary diagnostic counters have been
+removed. The interval limiter and a 10 ms sample yield prevent the earlier
+unthrottled EE/IOP network calls.
+
+The final non-diagnostic build was also tested on the real PS2, leaving
+execution running for about 2.5 seconds before the first Ctrl-C. It
+reported two `T02` stops, resumed successfully between them, detached,
+and left PS2Link responsive.
+
+**Actual GNU R5900 GDB 17 (MI2) was independently verified:**
+
+- `-exec-continue` reported `^running` and `*running`.
+- `-exec-interrupt` reported `^done` and
+  `*stopped,reason="signal-received",signal-name="SIGINT"`.
+- A second `-exec-continue` / `-exec-interrupt` cycle reported the same
+  `SIGINT` stop and `-target-detach` succeeded.
+- PS2Link remained responsive after the test, without an IOP reset.
+
+For an interactive debugger, attach GNU GDB to port 12, use `continue`,
+then press Ctrl-C once the game is running. With the opt-in build and
+application safe-point calls, GDB should stop with `SIGINT` and allow
+register inspection followed by another `continue`. It will not stop an
+EE thread that never invokes the polling function.
 
 `tests/ctrlc_rsp_client.c` is a C-only manual hardware test: it resumes the
-sample, sends raw Ctrl-C twice, checks for two `T02`/`S02` stops, and
-detaches. CI compiles both ends but never executes a hardware interrupt test.
+sample, leaves it running for several seconds, sends raw Ctrl-C twice, checks
+for two `T02`/`S02` stops, and detaches. CI compiles both ends but never
+executes a hardware interrupt test. The above result validates a **cooperative
+safe point** only; genuine interruption of arbitrary uninstrumented EE code
+remains unimplemented.
 
 ## Subsequent preemptive milestone
 

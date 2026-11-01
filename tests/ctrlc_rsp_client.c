@@ -110,7 +110,11 @@ int main(int argc, char **argv)
     for (i = 0; i < 2; i++) {
         if (!send_packet("c")) { fprintf(stderr, "continue failed\n"); goto done; }
         {
-            const struct timespec pause_time = {0, 200000000};
+            /* Keep the first continue running for several seconds to
+             * detect polling regressions before testing repeat interrupts. */
+            const struct timespec pause_time = i == 0 ?
+                (struct timespec){2, 500000000} :
+                (struct timespec){0, 200000000};
             nanosleep(&pause_time, NULL);
         }
         if (!send_all("\003", 1) || !read_packet(response, sizeof(response))) {
