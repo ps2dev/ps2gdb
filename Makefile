@@ -4,9 +4,32 @@
 #  --------------------------------------------------------------------------
 
 
+HOST_CC ?= cc
+HOST_CFLAGS ?= -std=c99 -Wall -Wextra -Werror
+
 all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
+
+check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server
+	./tests/r5900_rsp_test
+	./tests/registers_test
+
+check-gdb: tests/mock_rsp_server
+	$(MAKE) -C ee
+	$(MAKE) -C sample
+	sh tests/check_gdb.sh
+
+# The mock server is used for host-to-host integration with PS2DEV GDB.
+# Building it in CI also ensures its native C sources stay portable.
+tests/r5900_rsp_test: tests/r5900_rsp_test.c ee/r5900-rsp.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
+tests/registers_test: tests/registers_test.c ee/r5900-registers.h ee/r5900-rsp.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
+tests/mock_rsp_server: tests/mock_rsp_server.c ee/r5900-registers.h ee/r5900-rsp.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
 debug:
 	$(MAKE) -C ee debug
@@ -18,3 +41,4 @@ install:
 clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
+	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server

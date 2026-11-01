@@ -1,3 +1,60 @@
+CURRENT EE GDB STATUS (November 2026)
+----------------------------------------------------------------------------
+GNU GDB 17 (mips64r5900el-ps2-elf-gdb) has been validated against ps2gdb
+on real PS2 hardware through PS2Link over Ethernet. The following operations
+were exercised: attach, read PC/SP/LO/HI, write registers, read/write stack
+memory, source breakpoints, instruction stepping, backtraces, detach, and
+reconnection after forcefully terminating an attached debugger.
+
+PS2DEV already installs GDB. It is not bundled with Binutils; it is a separate
+GNU debugger. ps2gdb provides the EE-side remote stub that communicates with
+GDB over TCP port 12. The sample requires ps2ips.irx and a live PS2Link host:
+file service. No IOP reset is performed inside the example program.
+
+Building and running the example:
+  make clean all check
+  cd sample
+  ps2client -h <PS2-IP> -t 120 -e PS2GDB_SAMPLE_DONE execee host:testgdb.elf
+
+Leave ps2client running to serve host: files and console logging. In another
+terminal, from the repository root:
+  mips64r5900el-ps2-elf-gdb sample/testgdb.elf
+  (gdb) target remote <PS2-IP>:12
+  (gdb) break testgdb.c:13
+  (gdb) continue
+  (gdb) print i
+  (gdb) set variable i = 100
+  (gdb) stepi
+  (gdb) detach
+
+The test program ends in SleepThread(), not process exit. After detaching,
+run 'ps2client -h <PS2-IP> reset' in a new host terminal to restore PS2Link.
+Do NOT call SifIopReset or exit() inside the EE test program.
+
+Compatibility and limitations:
+  * GNU GDB's built-in mips:5900 target represents the low 64 bits of
+    the EE's 128-bit GPR/HI/LO registers. The stub preserves the high 64
+    bits when the debugger edits those registers but does not yet expose
+    their values through a custom GDB target description.
+  * Only one EE execution context is exposed to GDB. IOP debugging, full
+    EE thread enumeration, asynchronous Ctrl-C while executing, and hardware
+    watchpoints are not implemented here.
+  * The memory service currently restricts remote accesses to safe
+    ordinary EE RAM; arbitrary MMIO and privileged memory require a
+    separate debugger design. Software breakpoints are supported via
+    GDB's memory-write fallback.
+  * The legacy PS2IPS/PS2Link network setup is still a prerequisite.
+
+To verify the host-side wire format with an installed EE GDB without a PS2:
+  make check
+  ./tests/mock_rsp_server 21599 &
+  mips64r5900el-ps2-elf-gdb -nx -q sample/testgdb.elf \
+    -ex 'target remote 127.0.0.1:21599' \
+    -ex 'info registers pc sp' -ex detach -ex quit
+
+This repository's license contains academic/non-commercial conditions;
+review it before reuse in a differently licensed project.
+
 2024 Current State by crt0
 
 Writing/Reading variables, memory, registers (only as 32bit), call stack - works.

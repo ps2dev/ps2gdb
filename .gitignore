@@ -8,3 +8,8 @@
 !.gitignore
 !.github
 !.clang-format
+
+# Native C regression executables
+tests/r5900_rsp_test
+tests/registers_test
+tests/mock_rsp_server

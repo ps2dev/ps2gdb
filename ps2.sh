@@ -1,8 +1,6 @@
-target remote 192.168.1.13:12
-symbol-file sample/testgdb.elf
-layout src
-layout asm
-layout split
-list main
-b testgdb.c:12
-c
+# Load the unstripped ELF before connecting, so breakpoints resolve correctly.
+# Replace 192.168.0.10 with your PS2Link IP address.
+set pagination off
+set remotetimeout 10
+file sample/testgdb.elf
+target remote 192.168.0.10:12

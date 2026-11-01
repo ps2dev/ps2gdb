@@ -369,6 +369,9 @@ struct gdb_regs
     int cp0_perfcnt; // 6
 };
 
+/* Only the EE stub needs its historical GDB remote signal numbers.
+ * Host-side protocol tests use their system's signal definitions. */
+#ifndef PS2GDB_HOST_TEST
 #define SIGHUP    1      // Hangup (POSIX).
 #define SIGINT    2      // Interrupt (ANSI).
 #define SIGQUIT   3      // Quit (POSIX).
@@ -407,6 +410,7 @@ struct gdb_regs
 // These should not be considered constants from userland.
 #define SIGRTMIN 32
 #define SIGRTMAX (_NSIG - 1)
+#endif /* !PS2GDB_HOST_TEST */
 
 
 // Status register bits available in all MIPS CPUs.
