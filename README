@@ -11,6 +11,16 @@ GNU debugger. ps2gdb provides the EE-side remote stub that communicates with
 GDB over TCP port 12. The sample requires ps2ips.irx and a live PS2Link host:
 file service. No IOP reset is performed inside the example program.
 
+Installing the public EE API:
+  make install
+
+Installs libps2gdbStub.a and ps2gdb.h under $(PS2SDK)/ports/lib and
+$(PS2SDK)/ports/include. A staged installation is supported with:
+  make -C ee install PS2GDB_INSTALL_PREFIX=/tmp/ps2gdb-test-install
+
+The command script is ps2.gdb (GDB commands, not a shell script). Update its
+remote IP before using 'mips64r5900el-ps2-elf-gdb -x ps2.gdb'.
+
 Building and running the example:
   make clean all check
   cd sample
@@ -62,7 +72,7 @@ Writing/Reading variables, memory, registers (only as 32bit), call stack - works
 Example usage: run sample with ps2link:
 ps2client -h 192.168.1.13 execee host:testgdb.elf
 in nanother terminal
-mips64r5900el-ps2-elf-gdb -x ps2.sh
+mips64r5900el-ps2-elf-gdb -x ps2.gdb
 
 TODO: rewrite metwork stack
 

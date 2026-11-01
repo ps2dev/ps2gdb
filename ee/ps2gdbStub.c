@@ -17,6 +17,7 @@
 #include <loadfile.h>
 #include <tcpip.h>
 #include "gdb-stub.h"
+#include "ps2gdb.h"
 #include "r5900-registers.h"
 #include "inst.h"
 
