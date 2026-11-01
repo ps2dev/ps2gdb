@@ -11,10 +11,15 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test
+check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test
 	./tests/r5900_rsp_test
 	./tests/registers_test
+	./tests/hw_breakpoint_state_test
 	sh tests/check_protocol.sh
+
+# Builds the EE hardware exception probe but never runs it automatically.
+hardware-probe-build:
+	$(MAKE) -C tests/hardware
 
 check-install:
 	$(MAKE) -C ee
@@ -33,6 +38,9 @@ tests/r5900_rsp_test: tests/r5900_rsp_test.c ee/r5900-rsp.h
 tests/registers_test: tests/registers_test.c ee/r5900-registers.h ee/r5900-rsp.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
+tests/hw_breakpoint_state_test: tests/hw_breakpoint_state_test.c ee/hw-breakpoint-state.h ee/r5900-rsp.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
 tests/rsp_protocol_test: tests/rsp_protocol_test.c ee/r5900-rsp.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
@@ -49,4 +57,4 @@ install:
 clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test
+	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test
