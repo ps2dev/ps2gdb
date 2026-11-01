@@ -10,6 +10,9 @@ ifeq ($(PS2GDB_HW_EXPERIMENTAL),1)
     EE_OBJS += hw-debug.o hw-exception.o
     EE_CFLAGS += -DPS2GDB_HW_EXPERIMENTAL
 endif
+ifeq ($(PS2GDB_CTRL_C_COOPERATIVE),1)
+    EE_CFLAGS += -DPS2GDB_CTRL_C_COOPERATIVE
+endif
 PS2GDB_INSTALL_PREFIX ?= $(PS2SDK)/ports
 
 EE_CFLAGS += -g -w

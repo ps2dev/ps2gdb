@@ -58,7 +58,21 @@ jobs:
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_function'
           sh tests/check_hw_direct_cache_flush.sh sample/testgdb.elf
 
-  native-tests:
+  cooperative-ctrlc-build:
+    name: EE cooperative Ctrl-C compile-only
+    runs-on: ubuntu-latest
+    container: ghcr.io/ps2dev/ps2dev:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: apk add build-base git
+      - name: Cross-compile opt-in safe point and manual C client
+        run: |
+          make clean
+          make PS2GDB_CTRL_C_COOPERATIVE=1 all
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdbstub_poll_interrupt'
+          gcc -std=c99 -Wall -Wextra -Werror tests/ctrlc_rsp_client.c -o /tmp/ctrlc_rsp_client
+
     name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)
     runs-on: ubuntu-latest
     strategy:

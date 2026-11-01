@@ -12,6 +12,9 @@ ifeq ($(PS2GDB_HW_EXPERIMENTAL),1)
     EE_CFLAGS += -DPS2GDB_HW_EXPERIMENTAL
     EE_LIBS += -leedebug
 endif
+ifeq ($(PS2GDB_CTRL_C_COOPERATIVE),1)
+    EE_CFLAGS += -DPS2GDB_CTRL_C_COOPERATIVE
+endif
 EE_LDFLAGS += -L../lib
 
 all:
