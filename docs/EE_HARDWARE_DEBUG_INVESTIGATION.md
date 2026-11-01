@@ -165,13 +165,10 @@ make -C tests/hardware EE_CFLAGS='-D_EE -G0 -g -Wall -DPS2GDB_PROBE_TRIGGER -DPS
 # Add -DPS2GDB_PROBE_SAVE_GPRS -DPS2GDB_PROBE_CALL_C to test the C callback
 ```
 
-The next milestone is a safe **level-2-to-level-1 handoff** that preserves
-the original `ErrorEPC`, lets GDB inspect the correct interrupted context
-with interrupts enabled, and rearms the hardware comparator *after* the
+The next milestone is to connect the diagnostic handoff below to the real
+GDB `trap_low` and RSP stop loop, then rearm the comparator *after* the
 interrupted instruction has executed. Do not enable production `Z1`–`Z4`
-or mark PR #11 ready until this behavior is proven on hardware and under
-real GNU GDB.
-
+or mark PR #11 ready until that full behavior is proven under real GDB.
 
 ## Level-2-to-level-1 handoff validated (192.168.31.10)
 
