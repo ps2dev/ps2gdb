@@ -404,13 +404,13 @@ int putDebugChar(char c)
 // be much of a speed issue with getpacket!
 static void getpacket(char *buffer)
 {
-    int ch, i, lo;
+    int ch, i;
     unsigned char checksum;
-    int overflow;
 
     for (;;) {
         unsigned int session = gdbstub_connection_generation;
         int count = 0;
+        int overflow = 0;
         do {
             ch = getDebugChar();
             if (session != gdbstub_connection_generation)
@@ -418,13 +418,12 @@ static void getpacket(char *buffer)
         } while (ch != '$');
 
         checksum = 0;
-        overflow = 0;
         for (;;) {
             ch = getDebugChar();
             if (session != gdbstub_connection_generation) break;
             if (ch == '#') {
                 int hi = getDebugChar();
-                lo = getDebugChar();
+                int lo = getDebugChar();
                 if (session != gdbstub_connection_generation) break;
                 hi = hex((unsigned char)hi);
                 lo = hex((unsigned char)lo);
