@@ -83,6 +83,17 @@ reads may not trigger read watchpoints, and other EE exception situations
 and multiple threads are not comprehensively covered.
 See docs/EE_HARDWARE_DEBUG_INVESTIGATION.md for full test and safety details.
 
+Cooperative Ctrl-C safe point (separate opt-in feature):
+  make clean
+  make PS2GDB_CTRL_C_COOPERATIVE=1 all
+
+Call `gdbstub_poll_interrupt()` periodically from the EE thread being
+debugged. It can receive GDB's raw Ctrl-C and stop through the ordinary
+register-preserving BREAK path. This is cooperative, not a preemptive stop
+of arbitrary uninstrumented EE code; two consecutive SIGINT stops and clean
+detach were validated on real PS2 at 192.168.31.10.
+See docs/EE_CTRL_C_INVESTIGATION.md for test results and safety limits.
+
 CI validation (no physical PS2 required):
   make clean all check check-gdb check-install
   make clean debug

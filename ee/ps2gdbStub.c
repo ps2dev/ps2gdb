@@ -101,6 +101,17 @@ static char input_buffer[BUFMAX];
 static char output_buffer[BUFMAX];
 static int gdbstub_initialised_g    = 0;
 static int gdbstub_num_exceptions_g = 0;
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+/* Only the main debugged EE thread may call gdbstub_poll_interrupt().
+ * RSP's unframed 0x03 interrupt is distinct from ordinary $...# packets.
+ */
+static volatile int gdbstub_running_g;
+static volatile int gdbstub_cooperative_sigint_g;
+static unsigned int gdbstub_last_poll_count;
+/* The EE CP0 Count increments at roughly 147 MHz. Bound socket checks to
+ * approximately 15 ms even if an application calls this every iteration. */
+#define GDBSTUB_CTRL_C_POLL_TICKS 0x00200000u
+#endif
 static const char hexchars[]        = "0123456789abcdef";
 
 
@@ -1074,6 +1085,10 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     ps2gdb_hw_disarm();
 #endif
 
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+    /* The poller must not receive data while GDB owns the stopped socket. */
+    gdbstub_running_g = 0;
+#endif
     gdbstub_num_exceptions_g++;
 
     if (debug_level_g & DEBUG_PRINTREGS) {
@@ -1166,6 +1181,13 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
 
     // Reply to remote GDB that an exception has occurred.
     sigval = computeSignal(trap);
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+    if (trap == 9 && gdbstub_cooperative_sigint_g &&
+        regs->cp0_epc == (unsigned int)breakinst + 4) {
+        sigval = SIGINT;
+        gdbstub_cooperative_sigint_g = 0;
+    }
+#endif
     ptr    = output_buffer;
 
     // Send trap type (converted to signal).
@@ -1425,6 +1447,11 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     } // while
 
 ret:
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+    gdbstub_cooperative_sigint_g = 0;
+    gdbstub_last_poll_count = 0;
+    gdbstub_running_g = (cs_g >= 0);
+#endif
     gdbstub_vanilla_to_ps2regs(ps2_regs, regs);
     flush_cache_all();
     return_handle_exception();
@@ -1643,6 +1670,10 @@ int gdbstub_init(int argc, char *argv[])
 
 void gdbstub_close()
 {
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+    gdbstub_running_g = 0;
+    gdbstub_cooperative_sigint_g = 0;
+#endif
 #ifdef PS2GDB_HW_EXPERIMENTAL
     ps2gdb_hw_close();
 #endif
@@ -1652,6 +1683,44 @@ void gdbstub_close()
     return;
 }
 
+
+/* A safe point for the *currently executing* debugged EE thread. GDB
+ * sends raw 0x03 during `continue`; there is no packet checksum or ACK.
+ * MSG_DONTWAIT prevents stalling the game if the debugger is idle. */
+void gdbstub_poll_interrupt(void)
+{
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+    unsigned char ch;
+    unsigned int now;
+    int count;
+
+    if (!gdbstub_initialised_g || !gdbstub_running_g || cs_g < 0)
+        return;
+
+    /* Never flood PS2IPS with an RPC on every iteration of a busy loop. */
+    __asm__ volatile("mfc0 %0, $9" : "=r"(now));
+    if ((unsigned int)(now - gdbstub_last_poll_count) < GDBSTUB_CTRL_C_POLL_TICKS)
+        return;
+    gdbstub_last_poll_count = now;
+
+    /* PS2SDK select() returned -1 on every poll in real EE testing. Use
+     * MSG_DONTWAIT directly, with the CP0 Count rate limiter above to
+     * prevent tight-loop EE/IOP network RPC overload. */
+    count = recv(cs_g, &ch, 1, MSG_DONTWAIT);
+    if (count == 1 && ch == 0x03) {
+        gdbstub_running_g = 0;
+        gdbstub_cooperative_sigint_g = 1;
+        /* On this thread, an ordinary level-1 BREAK captures true EE GPRs. */
+        breakpoint();
+    } else if (count == 0) {
+        /* Session ended while running. Do not wait in a socket callback. */
+        gdbstub_running_g = 0;
+        gdbstub_net_disconnect();
+    }
+#else
+    /* Ordinary builds have no asynchronous socket-reader behavior. */
+#endif
+}
 
 int gdb_stub_main(int argc, char *argv[])
 {

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <debug.h>
 #include <kernel.h>
+#include <delaythread.h>
 #include <ps2gdb.h>
 
 #ifdef PS2GDB_HW_EXPERIMENTAL
@@ -36,6 +37,20 @@ int main(int argc, char *argv[])
 #endif
         scr_printf("i = %d\n", i += 10);
         printf("PS2GDB_SAMPLE_DONE status=0\n");
+#ifdef PS2GDB_CTRL_C_COOPERATIVE
+        /* Controlled real-hardware Ctrl-C experiment. The game is running,
+         * but has a single safe point for the GDB raw interrupt request. */
+        {
+            volatile unsigned int counter = 0;
+            while (1) {
+                ++counter;
+                gdbstub_poll_interrupt();
+                /* Yield while the EE network RPC completes, and avoid
+                 * overwhelming the IOP/PS2Link with a busy spin. */
+                DelayThread(10000);
+            }
+        }
+#endif
     } else {
         printf("PS2GDB_SAMPLE_DONE status=1\n");
     }

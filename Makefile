@@ -11,7 +11,7 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test
+check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
 	./tests/r5900_rsp_test
 	./tests/registers_test
 	./tests/hw_breakpoint_state_test
@@ -33,6 +33,9 @@ check-gdb: tests/mock_rsp_server
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 	sh tests/check_gdb.sh
+
+tests/ctrlc_rsp_client: tests/ctrlc_rsp_client.c
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
 # The mock server is used for host-to-host integration with PS2DEV GDB.
 # Building it in CI also ensures its native C sources stay portable.
@@ -61,4 +64,4 @@ install:
 clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test
+	rm -f tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
