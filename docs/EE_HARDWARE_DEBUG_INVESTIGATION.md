@@ -277,8 +277,7 @@ Disassembly of the affected test showed that GCC scheduled the **second**
 watched store into the delay slot of a `jal FlushCache` instruction. The
 EE's hardware-debug `Cause.BD2` flag indicates exceptions in delay slots,
 and `ErrorEPC` points at the preceding branch instruction in that case
-(see the EE architecture documentation at
-https://psi-rockin.github.io/ps2tek/).
+(see the [PS2 EE architecture documentation](https://psi-rockin.github.io/ps2tek/)).
 
 The investigation also exposed a concrete self-breakpoint hazard in the
 original automatic-rearm path: `single_step()` patched the branch target
