@@ -16,4 +16,6 @@ make -C tests/hardware clean
 make -C tests/hardware EE_CFLAGS="$BASE -DPS2GDB_PROBE_READ -DPS2GDB_PROBE_READ_COLD"
 make -C tests/hardware clean
 make -C tests/hardware EE_CFLAGS="$BASE -DPS2GDB_PROBE_SAVE_GPRS -DPS2GDB_PROBE_CALL_C -DPS2GDB_PROBE_L1_HANDOFF"
+make -C tests/hardware clean
+make -C tests/hardware EE_CFLAGS="$BASE -DPS2GDB_PROBE_SAVE_GPRS -DPS2GDB_PROBE_L1_HANDOFF -DPS2GDB_PROBE_BD2"
 echo 'PASS hardware diagnostic variants cross-compiled (never executed)'

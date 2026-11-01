@@ -392,7 +392,13 @@ static int gdbstub_send_all(const char *data, int length)
 {
     int sent = 0;
     while (sent < length) {
-        int n = send(cs_g, data + sent, length - sent, 0);
+        int remaining = length - sent;
+#ifdef PS2GDB_HW_EXPERIMENTAL
+        /* PS2IPS may stall on a full 1444-byte register reply in one send.
+         * Preserve the wire packet but use bounded socket writes. */
+        if (remaining > 256) remaining = 256;
+#endif
+        int n = send(cs_g, data + sent, remaining, 0);
         if (n <= 0) {
             gdbstub_net_disconnect();
             return 0;

@@ -25,6 +25,14 @@
 #if defined(PS2GDB_PROBE_L1_HANDOFF) && !defined(PS2GDB_PROBE_MINIMAL_VECTOR)
 #error PS2GDB_PROBE_L1_HANDOFF requires PS2GDB_PROBE_MINIMAL_VECTOR
 #endif
+#if defined(PS2GDB_PROBE_BD2) && (!defined(PS2GDB_PROBE_L1_HANDOFF) || !defined(PS2GDB_PROBE_TRIGGER))
+#error PS2GDB_PROBE_BD2 requires PS2GDB_PROBE_TRIGGER and PS2GDB_PROBE_L1_HANDOFF
+#endif
+
+#ifdef PS2GDB_PROBE_BD2
+extern void ps2gdb_probe_bd2_write(volatile unsigned int *word);
+extern unsigned char ps2gdb_probe_bd2_branch[];
+#endif
 
 static volatile unsigned int watched_word;
 static volatile unsigned int observed_word;
@@ -102,6 +110,7 @@ static unsigned int read_ee_status(void)
 int main(void)
 {
     int ok = 0;
+    unsigned int saved_sp = 0;
     unsigned int status_before = read_ee_status();
     printf("PS2GDB_HW_PROBE_BEGIN addr=%08x status=%08x DEV=%u\n",
            (unsigned int)&watched_word, status_before,
@@ -158,6 +167,8 @@ int main(void)
 #else
         observed_word = watched_word;
 #endif
+#elif defined(PS2GDB_PROBE_BD2)
+        ps2gdb_probe_bd2_write(&watched_word);
 #else
         watched_word = 42;
 #endif
@@ -166,10 +177,12 @@ int main(void)
         debug_hits = ps2gdb_probe_debug_hits;
         last_debug_error_epc = ps2gdb_probe_debug_error_epc;
         last_debug_cause = ps2gdb_probe_debug_cause;
+#ifdef PS2GDB_PROBE_SAVE_GPRS
+        memcpy(&saved_sp, &ps2gdb_probe_gpr_snapshot[29], sizeof(saved_sp));
+#endif
         ok = last_debug_bpc == 0 &&
 #ifdef PS2GDB_PROBE_SAVE_GPRS
-             ((u32 *)&ps2gdb_probe_gpr_snapshot[29])[0] != 0 &&
-             (((u32 *)&ps2gdb_probe_gpr_snapshot[29])[0] & 15) == 0 &&
+             saved_sp != 0 && (saved_sp & 15) == 0 &&
 #endif
 #ifdef PS2GDB_PROBE_CALL_C
              ps2gdb_probe_c_hits == 1 &&
@@ -181,6 +194,10 @@ int main(void)
              watched_word == 42 && observed_word == 42 &&
 #elif defined(PS2GDB_PROBE_READ)
              watched_word == 42 && observed_word == 42 &&
+#elif defined(PS2GDB_PROBE_BD2)
+             watched_word == 42 &&
+             last_debug_error_epc == (unsigned int)ps2gdb_probe_bd2_branch &&
+             (last_debug_cause & EE_CAUSE_BD2) != 0 &&
 #else
              watched_word == 42 &&
 #endif
@@ -209,10 +226,15 @@ int main(void)
            ps2gdb_probe_l1_hits, ps2gdb_probe_l1_epc,
            ps2gdb_probe_l1_cause);
 #endif
+#ifdef PS2GDB_PROBE_BD2
+    printf("PS2GDB_HW_PROBE_BD2 expected_epc=%08x observed_epc=%08x bd2=%u\n",
+           (unsigned int)ps2gdb_probe_bd2_branch,
+           last_debug_error_epc, !!(last_debug_cause & EE_CAUSE_BD2));
+#endif
     printf("PS2GDB_HW_PROBE_DONE status=%d hits=%u watched=%u observed=%u errorepc=%08x cause=%08x bpc=%08x savedsp=%08x\n",
            ok ? 0 : 1, debug_hits, watched_word, observed_word,
            last_debug_error_epc, last_debug_cause, last_debug_bpc,
-           ((u32 *)&ps2gdb_probe_gpr_snapshot[29])[0]);
+           saved_sp);
     fflush(stdout);
     SleepThread();
     for (;;) SleepThread();

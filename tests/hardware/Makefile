@@ -1,5 +1,5 @@
 EE_BIN = ee_debug_probe.elf
-EE_OBJS = ee_debug_probe.o ee_debug_minimal.o
+EE_OBJS = ee_debug_probe.o ee_debug_minimal.o ee_debug_bd2.o
 EE_CFLAGS += -g -Wall
 EE_LIBS = -leedebug
 

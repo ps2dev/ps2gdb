@@ -71,9 +71,12 @@ bypass the read comparator (uncached reads and cache-miss reads were verified).
 The non-experimental build does not install a level-2 debug exception vector
 or accept Z1-Z4 packets. The opt-in implementation remains under active
 investigation: a simultaneous instruction/data comparator test hit a
-branch-delay-slot watchpoint and hung before resuming. A deferred-step patch
-has been cross-compiled but needs real-console retesting before considering
-this mode stable. Do not use it as a default debugging workflow yet.
+branch-delay-slot watchpoint and hung before resuming. The deferred-step
+fix also failed the combined test on real PS2; a dedicated BD2 diagnostic
+has been prepared for the next controlled console test. Separately, PS2IPS
+was seen to stall on a 1,440-byte register reply; the experimental build
+now uses <=256-byte TCP writes, verified on real PS2. Do not use this mode
+as a default debugging workflow yet.
 See docs/EE_HARDWARE_DEBUG_INVESTIGATION.md for full test and safety details.
 
 CI validation (no physical PS2 required):

@@ -298,3 +298,40 @@ running over a temporary breakpoint that is already installed. The
 assembly build/disassembly has been checked, but real-PS2 validation is
 still required. The experimental level-2 handler also now captures the
 original CP0 `Cause` for checking `BD2` on the next controlled test.
+
+
+## Retest after restart — combined stop still hangs
+
+After the PS2 was restarted at `192.168.31.10`, the first GDB connection
+stalled on the full-register `g` reply. RSP tracing confirmed that initial
+handshakes and `q*` queries succeeded, but GDB timed out on the large reply.
+Replacing register encoding with a synthetic 1,440-character reply did not
+help, isolating the issue to transmission rather than register formatting.
+Sending the identical response in **256-byte TCP writes** did work. The
+experimental TCP sender was changed to use 256-byte chunks; GNU GDB
+subsequently read the real PC and SP and detached cleanly on the console.
+The standard non-experimental sender remains unchanged.
+
+With that independent TCP issue corrected, the original combined test
+was retried using the deferred temporary-breakpoint patch. GDB once again
+reported two hardware stops at the watched function, then the first write
+watchpoint (`0 → 11`), but timed out on the next `continue`. PS2Link became
+unresponsive. Thus **deferred opcode patching alone does not resolve the
+combined-comparator/branch-delay failure**. No further console operations
+were attempted once the hang was confirmed.
+
+For the next controlled physical-console run, a dedicated
+`PS2GDB_PROBE_BD2` diagnostic mode has been cross-compiled. It places a
+watched store **explicitly in the delay slot of `jal`**, checks that the
+captured level-2 Cause has `EE_CAUSE_BD2` set, checks that `ErrorEPC` points
+to the preceding branch instruction, and uses the previously validated
+minimal level-2-to-level-1 handoff to resume execution. It neither invokes
+GDB nor runs a network stack from an exception context. This opt-in probe
+**has not been executed on real hardware**; the default CI build never
+triggers it.
+
+This diagnostic can distinguish whether the remaining failure is inherent
+to the level-2 delay-slot handoff or specific to the real GDB stop/rearm
+state machine. Only after the independent BD2 probe passes should the
+combined GDB comparator test be attempted again. It is not safe to mark
+this PR ready yet.
