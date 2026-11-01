@@ -1,4 +1,5 @@
-**EE hardware breakpoints and watchpoints — investigation**
+<!-- markdownlint-configure-file { "MD043": false } -->
+# EE hardware breakpoints and watchpoints — investigation
 
 This is experimental groundwork, **not** an enabled RSP feature. GDB's
 `Z1`/`z1` (instruction comparator) and `Z2`–`Z4` (shared data comparator)

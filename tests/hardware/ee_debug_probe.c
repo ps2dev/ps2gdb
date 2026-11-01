@@ -95,16 +95,15 @@ int main(void)
         ok = watched_word == 42 && last_debug_bpc == 0 &&
              debug_hits == 1 &&
              M_EE_GET_CAUSE_EXC2(last_debug_cause) == EE_EXC2_DBG;
-#else
+#elif defined(PS2GDB_PROBE_TRIGGER)
         ok = (debug_hits == 1 && watched_word == 42 &&
               M_EE_GET_CAUSE_EXC2(last_debug_cause) == EE_EXC2_DBG);
+#else
+        ok = (watched_word == 42);
 #endif
         ee_dbg_clr_bps();
         ee_dbg_remove(2);
     }
-#ifndef PS2GDB_PROBE_TRIGGER
-    ok = (watched_word == 42);
-#endif
     printf("PS2GDB_HW_PROBE_DONE status=%d hits=%u watched=%u errorepc=%08x cause=%08x bpc=%08x\n",
            ok ? 0 : 1, debug_hits, watched_word, last_debug_error_epc,
            last_debug_cause, last_debug_bpc);
