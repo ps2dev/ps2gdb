@@ -21,6 +21,11 @@ check: tests/r5900_rsp_test tests/registers_test tests/mock_rsp_server tests/rsp
 hardware-probe-build:
 	$(MAKE) -C tests/hardware clean all
 
+# Non-mutating VBlank interrupt-context research; compile only in CI.
+# The binary itself runs exclusively by explicit ps2client command.
+preemptive-probe-build:
+	$(MAKE) -C tests/preemptive clean all
+
 # Diagnostic macros compile only; the script restores a non-triggering ELF.
 hardware-probe-variants-build:
 	sh tests/hardware/check_variants.sh

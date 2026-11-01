@@ -58,6 +58,20 @@ jobs:
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_function'
           sh tests/check_hw_direct_cache_flush.sh sample/testgdb.elf
 
+  preemptive-context-probe-build:
+    name: EE preemptive context observation (compile-only)
+    runs-on: ubuntu-latest
+    container: ghcr.io/ps2dev/ps2dev:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: apk add build-base git
+      - name: Build VBlank context probe, never execute it in CI
+        run: |
+          make preemptive-probe-build
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_probe_busy_begin'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_probe_busy_end'
+
   cooperative-ctrlc-build:
     name: EE cooperative Ctrl-C compile-only
     runs-on: ubuntu-latest
