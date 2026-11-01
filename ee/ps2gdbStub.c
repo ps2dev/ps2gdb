@@ -8,6 +8,8 @@
 
 #include <tamtypes.h>
 #include <kernel.h>
+#include <delaythread.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <debug.h>
@@ -15,6 +17,7 @@
 #include <loadfile.h>
 #include <tcpip.h>
 #include "gdb-stub.h"
+#include "r5900-registers.h"
 #include "inst.h"
 
 // This project no longer contains a main function. Instead, link it into your own project and call gdb_stub_main from your own
@@ -67,7 +70,7 @@ int debug_level_g = DEBUG_NONE;
 // Low level support functions.
 extern void trap_low(void);      // In "gdb-low.S".
 extern int putDebugChar(char c); // Write a single character.
-extern char getDebugChar(void);  // Read a single character.
+extern int getDebugChar(void);  // Read a single character.
 static char *hex2mem(char *buf, char *mem, int count, int may_fault);
 
 // Breakpoint function and actual address of break instruction.
@@ -242,8 +245,11 @@ volatile gdbstub_comms_data *comms_p_g;
 struct sockaddr_in gdb_local_addr_g;
 struct sockaddr_in gdb_remote_addr_g;
 fd_set comms_fd_g, temp_comms_fd_g;
-int sh_g;
+int sh_g = -1;
 int cs_g = -1;
+static unsigned int gdbstub_connection_generation;
+static int recv_buf_pos;
+static int recv_buf_len;
 
 void flush_cache_all()
 {
@@ -302,7 +308,7 @@ int gdbstub_printf(int debug_mask, char *format, ...)
     if ((debug_mask & debug_level_g) == 0)
         return 0;
 
-    vprintf("GDBSTUB :: ", 0);
+    printf("GDBSTUB :: ");
     va_start(args, format);
     ret = vprintf(format, args);
     va_end(args);
@@ -321,14 +327,10 @@ int gdbstub_error(char *format, ...)
     va_list args;
     int ret;
 
-    while (1) {
-        vprintf("GDBSTUBERROR :: ", 0);
-        va_start(args, format);
-        ret = vprintf(format, args);
-        va_end(args);
-        wait_a_while(1);
-    }
-
+    printf("GDBSTUBERROR :: ");
+    va_start(args, format);
+    ret = vprintf(format, args);
+    va_end(args);
     return ret;
 }
 
@@ -346,52 +348,55 @@ static int hex(unsigned char ch)
 
 // getpacket depends on getDebugChar, but my communications happen in complete packets anyway, so this is a bit
 // round the houses, though not particularly slow.
-char getDebugChar()
+static void gdbstub_net_disconnect(void)
 {
-    static int recvd_chars_processed = 0;
-    static int recvd_chars           = 0;
-
-    if (recvd_chars_processed < recvd_chars) {
-        return (gdbstub_recv_buffer_g[recvd_chars_processed++]);
+    if (cs_g >= 0) {
+        disconnect(cs_g);
+        cs_g = -1;
     }
-
-    // Take it.
-    recvd_chars                        = recv(cs_g, gdbstub_recv_buffer_g, SIZE_GDBSTUB_TCP_BUFFER, 0);
-    recvd_chars_processed              = 0;
-    gdbstub_recv_buffer_g[recvd_chars] = 0;
-    gdbstub_printf(DEBUG_COMMS, "Recieved %d bytes, of:-\n\t\t%s\n", recvd_chars, gdbstub_recv_buffer_g);
-
-    if (recvd_chars_processed < recvd_chars) {
-        return (gdbstub_recv_buffer_g[recvd_chars_processed++]);
-    }
-
-
-    gdbstub_printf(DEBUG_COMMS, " Waiting for remote GDB to connect\n\n\n");
-    while (gdbstub_net_accept() == -1) {
-        gdbstub_error("GDB reconnect failed.\n");
-    }
-
-    return 0xff;
+    recv_buf_pos = 0;
+    recv_buf_len = 0;
 }
 
+/* Return an unsigned byte, or -1 on a connection transition. */
+int getDebugChar(void)
+{
+    if (recv_buf_pos < recv_buf_len)
+        return (unsigned char)gdbstub_recv_buffer_g[recv_buf_pos++];
 
-// This puts a single char out at a time. But really putpacket batch sends any major stuff. This is only used outside of putpacket
-// is for single byte acks or fails (+/-)
+    if (cs_g >= 0) {
+        int count = recv(cs_g, gdbstub_recv_buffer_g,
+                     SIZE_GDBSTUB_TCP_BUFFER, 0);
+        if (count > 0) {
+            recv_buf_len = count;
+            recv_buf_pos = 1;
+            return (unsigned char)gdbstub_recv_buffer_g[0];
+        }
+        gdbstub_net_disconnect();
+    }
+    /* A GDB session can be restarted without rebooting the PS2. */
+    while (gdbstub_net_accept() < 0)
+        DelayThread(10000);
+    return -1;
+}
+
+static int gdbstub_send_all(const char *data, int length)
+{
+    int sent = 0;
+    while (sent < length) {
+        int n = send(cs_g, data + sent, length - sent, 0);
+        if (n <= 0) {
+            gdbstub_net_disconnect();
+            return 0;
+        }
+        sent += n;
+    }
+    return 1;
+}
+
 int putDebugChar(char c)
 {
-    int sent_size;
-    char ch[2];
-
-    ch[0] = c;
-    ch[1] = 0x0;
-
-    sent_size = send(cs_g, ch, 1, 0);
-    if (sent_size != 1) {
-        gdbstub_error("Couldn't send a char %c\n", c);
-        return 0;
-    }
-
-    return 1;
+    return cs_g >= 0 && gdbstub_send_all(&c, 1);
 }
 
 // Scan for the sequence $<data>#<checksum>
@@ -399,96 +404,85 @@ int putDebugChar(char c)
 // be much of a speed issue with getpacket!
 static void getpacket(char *buffer)
 {
+    int ch, i;
     unsigned char checksum;
-    unsigned char xmitcsum;
-    int i;
-    int count;
-    unsigned char ch;
-    do {
-        // Wait for the start character, ignore all other characters.
-        while ((ch = (getDebugChar() & 0x7f)) != '$') {
-            __asm__ __volatile__("nop");
-        }
+
+    for (;;) {
+        unsigned int session = gdbstub_connection_generation;
+        int count = 0;
+        int overflow = 0;
+        do {
+            ch = getDebugChar();
+            if (session != gdbstub_connection_generation)
+                session = gdbstub_connection_generation;
+        } while (ch != '$');
 
         checksum = 0;
-        xmitcsum = -1;
-        count    = 0;
-
-        // Read until a # or end of buffer is found.
-        while (count < BUFMAX) {
-            ch = getDebugChar() & 0x7f;
+        for (;;) {
+            ch = getDebugChar();
+            if (session != gdbstub_connection_generation) break;
             if (ch == '#') {
-                break;
-            }
-            checksum      = checksum + ch;
-            buffer[count] = ch;
-            count         = count + 1;
-        }
-
-        if (count >= BUFMAX)
-            continue;
-
-        buffer[count] = 0;
-
-        if (ch == '#') {
-            xmitcsum = hex(getDebugChar() & 0x7f) << 4;
-            xmitcsum |= hex(getDebugChar() & 0x7f);
-
-            if (checksum != xmitcsum) {
-                putDebugChar('-');
-                gdbstub_error("checksum failed\n");
-            } else {
+                int hi = getDebugChar();
+                int lo = getDebugChar();
+                if (session != gdbstub_connection_generation) break;
+                hi = hex((unsigned char)hi);
+                lo = hex((unsigned char)lo);
+                if (hi < 0 || lo < 0 ||
+                    checksum != (unsigned char)((hi << 4) | lo) || overflow) {
+                    putDebugChar('-');
+                    break;
+                }
+                buffer[count] = 0;
                 putDebugChar('+');
-
-                // If a sequence char is present, reply with the sequence ID.
-                if (buffer[2] == ':') {
+                if (count > 2 && buffer[2] == ':') {
                     putDebugChar(buffer[0]);
                     putDebugChar(buffer[1]);
-
-                    // Remove sequence chars from buffer.
-                    count = strlen(buffer);
-                    for (i = 3; i <= count; i++)
-                        buffer[i - 3] = buffer[i];
+                    for (i = 3; i <= count; i++) buffer[i - 3] = buffer[i];
                 }
+                return;
             }
+            checksum += (unsigned char)ch;
+            if (count < BUFMAX - 1)
+                buffer[count++] = (char)ch;
+            else
+                overflow = 1;
         }
-    } while (checksum != xmitcsum);
+    }
 }
 
 // Fast version. Whole packet sent at a time.
 static void putpacket(char *buffer)
 {
-    unsigned char checksum;
-    unsigned char ch;
-    int count, sent_size;
-    int n;
-    int len;
+    unsigned char checksum = 0;
+    int i, length, retry, ack;
+    unsigned int generation;
 
+    length = r5900_rsp_bounded_length(buffer, SIZE_GDBSTUB_TCP_BUFFER - 3);
+    if (length > SIZE_GDBSTUB_TCP_BUFFER - 4) {
+        gdbstub_error("oversized GDB reply (%d bytes)\n", length);
+        return;
+    }
     gdbstub_send_buffer_g[0] = '$';
-    checksum                 = 0;
-    count                    = 0;
-
-    gdbstub_printf(DEBUG_COMMS, "putpacket of:-\n\t\t%s, size is %d\n", buffer, strlen(buffer));
-    while ((ch = buffer[count]) != 0) {
-        gdbstub_send_buffer_g[count + 1] = ch;
+    for (i = 0; i < length; i++) {
+        unsigned char ch = (unsigned char)buffer[i];
+        gdbstub_send_buffer_g[i + 1] = ch;
         checksum += ch;
-        count++;
     }
-    gdbstub_send_buffer_g[count + 1] = '#';
-    gdbstub_send_buffer_g[count + 2] = hexchars[checksum >> 4];
-    gdbstub_send_buffer_g[count + 3] = hexchars[checksum & 0xf];
+    gdbstub_send_buffer_g[length + 1] = '#';
+    gdbstub_send_buffer_g[length + 2] = hexchars[checksum >> 4];
+    gdbstub_send_buffer_g[length + 3] = hexchars[checksum & 15];
 
-    len       = count + 4;
-    sent_size = n = send(cs_g, gdbstub_send_buffer_g, len, 0);
-    // Send buffer of ps2ips (1024 Bytes) could be to small when sending all registers:
-    while (sent_size < len) {
-        n = send(cs_g, &gdbstub_send_buffer_g[sent_size], len - sent_size, 0);
-        if (n <= 0)
-            break;
-        sent_size += n;
+    generation = gdbstub_connection_generation;
+    for (retry = 0; retry < 3; retry++) {
+        if (!gdbstub_send_all(gdbstub_send_buffer_g, length + 4)) return;
+        do {
+            ack = getDebugChar();
+            if (generation != gdbstub_connection_generation)
+                return; /* Let the new debugger start with a fresh packet. */
+        } while (ack != '+' && ack != '-');
+        if (ack == '+') return;
     }
-    while ((getDebugChar() & 0x7f) != '+')
-        ; // Wait for ack.
+    gdbstub_error("GDB did not acknowledge reply\n");
 }
 
 // Indicate to caller of mem2hex or hex2mem that there
@@ -1034,7 +1028,8 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     *ptr++ = hexchars[REG_EPC >> 4];
     *ptr++ = hexchars[REG_EPC & 0xf];
     *ptr++ = ':';
-    ptr    = mem2hex((char *)&regs->cp0_epc, ptr, 4, 0);
+    r5900_rsp_encode_u64(ptr, (uint32_t)regs->cp0_epc);
+    ptr += R5900_RSP_REG_HEX;
     *ptr++ = ';';
 
 #ifdef COMPILER_USES_30_AS_FP
@@ -1042,14 +1037,16 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     *ptr++ = hexchars[REG_FP >> 4];
     *ptr++ = hexchars[REG_FP & 0xf];
     *ptr++ = ':';
-    ptr    = mem2hex((char *)&regs->reg30, ptr, 4, 0);
+    r5900_rsp_encode_u64(ptr, r5900_rsp_register_value(ps2_regs, regs, 30));
+    ptr += R5900_RSP_REG_HEX;
     *ptr++ = ';';
 #else
     // Send stack pointer as frame pointer instead, it's the best we can do?
     *ptr++ = hexchars[REG_FP >> 4];
     *ptr++ = hexchars[REG_FP & 0xf];
     *ptr++ = ':';
-    ptr    = mem2hex((char *)&regs->reg29, ptr, 4, 0);
+    r5900_rsp_encode_u64(ptr, r5900_rsp_register_value(ps2_regs, regs, 29));
+    ptr += R5900_RSP_REG_HEX;
     *ptr++ = ';';
 #endif
 
@@ -1057,7 +1054,8 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     *ptr++ = hexchars[REG_SP >> 4];
     *ptr++ = hexchars[REG_SP & 0xf];
     *ptr++ = ':';
-    ptr    = mem2hex((char *)&regs->reg29, ptr, 4, 0);
+    r5900_rsp_encode_u64(ptr, r5900_rsp_register_value(ps2_regs, regs, 29));
+    ptr += R5900_RSP_REG_HEX;
     *ptr++ = ';';
 
     // put the packet.
@@ -1092,39 +1090,81 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                 strcpy(output_buffer, "OK");
                 break;
 
-            // Return the value of the CPU registers.
+            // GNU GDB's mips:5900 wire layout has 90 64-bit registers.
             case 'g':
-                ptr = mem2hex((char *)&regs->reg0, ptr, 32 * 4, 0);      // r0...r31
-                ptr = mem2hex((char *)&regs->cp0_status, ptr, 6 * 4, 0); // status, lo, hi, bad, cause, pc (epc!).
-                ptr = mem2hex((char *)&regs->fpr0, ptr, 32 * 4, 0);      // f0...31
-                ptr = mem2hex((char *)&regs->cp1_fsr, ptr, 2 * 4, 0);    // cp1
-                ptr = mem2hex((char *)&regs->frame_ptr, ptr, 2 * 4, 0);  // fp, dummy. What's dummy for?
-                ptr = mem2hex((char *)&regs->cp0_index, ptr, 16 * 4, 0); // index, random, entrylo0, entrylo0 ... prid
+                r5900_rsp_encode_registers(output_buffer, ps2_regs, regs);
                 break;
 
-            // Set the value of the CPU registers - return OK.
-            case 'G': {
-                // TODO :: Test this, what about the SP stuff?
-                ptr2 = &input_buffer[1];
-                hex2mem(ptr2, (char *)&regs->reg0, 32 * 4, 0);
-                ptr2 = &ptr2[32 * 8];
-                hex2mem(ptr2, (char *)&regs->cp0_status, 6 * 4, 0);
-                ptr2 = &ptr2[6 * 8];
-                hex2mem(ptr2, (char *)&regs->fpr0, 32 * 4, 0);
-                ptr2 = &ptr2[32 * 8];
-                hex2mem(ptr2, (char *)&regs->cp1_fsr, 2 * 4, 0);
-                ptr2 = &ptr2[2 * 8];
-                hex2mem(ptr2, (char *)&regs->frame_ptr, 2 * 4, 0);
-                ptr2 = &ptr2[2 * 8];
-                hex2mem(ptr2, (char *)&regs->cp0_index, 16 * 4, 0);
+            case 'G':
+                if (r5900_rsp_bounded_length(input_buffer + 1, BUFMAX - 1) != R5900_RSP_ALL_HEX ||
+                    !r5900_rsp_decode_registers(input_buffer + 1, ps2_regs, regs))
+                    strcpy(output_buffer, "E01");
+                else
+                    strcpy(output_buffer, "OK");
+                break;
+
+            case 'p': {
+                unsigned int number;
+                if (!r5900_rsp_parse_regno(input_buffer + 1, &number) ||
+                    number >= R5900_RSP_REG_COUNT)
+                    strcpy(output_buffer, "E01");
+                else
+                    r5900_rsp_encode_u64(output_buffer,
+                        r5900_rsp_register_value(ps2_regs, regs, number));
+                break;
+            }
+
+            case 'P': {
+                unsigned int number;
+                uint64_t value;
+                char *equals = strchr(input_buffer + 1, '=');
+                if (!equals ||
+                    r5900_rsp_bounded_length(equals + 1,
+                        BUFMAX - (equals + 1 - input_buffer)) != R5900_RSP_REG_HEX) {
+                    strcpy(output_buffer, "E01");
+                    break;
+                }
+                *equals = 0;
+                if (!r5900_rsp_parse_regno(input_buffer + 1, &number) ||
+                    number >= R5900_RSP_REG_COUNT ||
+                    !r5900_rsp_decode_u64(equals + 1, &value))
+                    strcpy(output_buffer, "E01");
+                else {
+                    r5900_rsp_set_register(ps2_regs, regs, number, value);
+                    strcpy(output_buffer, "OK");
+                }
+                break;
+            }
+
+            case 'q':
+                if (strncmp(input_buffer, "qSupported", 10) == 0)
+                    strcpy(output_buffer, "PacketSize=7fc");
+                else if (strcmp(input_buffer, "qAttached") == 0)
+                    strcpy(output_buffer, "1");
+                else if (strcmp(input_buffer, "qC") == 0)
+                    strcpy(output_buffer, "QC1");
+                else if (strcmp(input_buffer, "qfThreadInfo") == 0)
+                    strcpy(output_buffer, "m1");
+                else if (strcmp(input_buffer, "qsThreadInfo") == 0)
+                    strcpy(output_buffer, "l");
+                else if (strncmp(input_buffer, "qOffsets", 8) == 0)
+                    strcpy(output_buffer, "Text=0;Data=0;Bss=0");
+                else if (strncmp(input_buffer, "qSymbol:", 8) == 0)
+                    strcpy(output_buffer, "OK");
+                break;
+
+            case 'T':
                 strcpy(output_buffer, "OK");
-            } break;
+                break;
 
             // mAA..AA,LLLL: Read LLLL bytes at address AA..AA.
             case 'm':
                 ptr2 = &input_buffer[1];
 
-                if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' && hexToInt(&ptr2, &length)) {
+                if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' &&
+                    hexToInt(&ptr2, &length) && !*ptr2 && length >= 0 &&
+                    length <= (SIZE_GDBSTUB_TCP_BUFFER - 4) / 2 &&
+                    r5900_rsp_valid_ram_range((uint32_t)addr, (uint32_t)length)) {
                     if (mem2hex((char *)addr, output_buffer, length, 1))
                         break;
                     strcpy(output_buffer, "E03");
@@ -1136,7 +1176,13 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
             case 'M':
                 ptr2 = &input_buffer[1];
 
-                if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' && hexToInt(&ptr2, &length) && *ptr2++ == ':') {
+                if (hexToInt(&ptr2, &addr) && *ptr2++ == ',' &&
+                    hexToInt(&ptr2, &length) && length >= 0 &&
+                    r5900_rsp_valid_ram_range((uint32_t)addr, (uint32_t)length) &&
+                    *ptr2++ == ':' &&
+                    r5900_rsp_bounded_length(ptr2,
+                        BUFMAX - (ptr2 - input_buffer)) == (size_t)length * 2 &&
+                    r5900_rsp_valid_hex(ptr2, length * 2)) {
                     if (hex2mem(ptr2, (char *)addr, length, 1))
                         strcpy(output_buffer, "OK");
                     else
@@ -1153,6 +1199,12 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
                     regs->cp0_epc = addr;
                 goto ret;
                 break;
+
+            // Detach without killing the EE program or resetting the IOP.
+            case 'D':
+                putpacket("OK");
+                gdbstub_net_disconnect();
+                goto ret;
 
             // Kill the program.
             case 'k':
@@ -1240,18 +1292,17 @@ static int hexToInt(char **ptr, int *intValue)
     int numChars = 0;
     int hexValue;
 
-    *intValue = 0;
+    unsigned int value = 0;
 
     while (**ptr) {
         hexValue = hex(**ptr);
-        if (hexValue < 0)
-            break;
-
-        *intValue = (*intValue << 4) | hexValue;
+        if (hexValue < 0) break;
+        if (value > (UINT32_MAX >> 4)) return 0;
+        value = (value << 4) | (unsigned int)hexValue;
         numChars++;
-
         (*ptr)++;
     }
+    *intValue = (int)value;
 
     return (numChars);
 }
@@ -1304,6 +1355,7 @@ int gdbstub_net_open()
     if (rc_bind < 0) {
         gdbstub_error("Bind failed.\n");
         disconnect(sh_g); // Clean-up on failures.
+        sh_g = -1;
         return -1;
     }
     gdbstub_printf(DEBUG_COMMSINIT, "Bind returned %i.\n", rc_bind);
@@ -1312,6 +1364,7 @@ int gdbstub_net_open()
     if (rc_listen < 0) {
         gdbstub_error("Listen failed.\n");
         disconnect(sh_g); // Clean-up on failures.
+        sh_g = -1;
         return -1;
     }
     gdbstub_printf(DEBUG_COMMSINIT, "Listen returned %i.\n", rc_listen);
@@ -1324,16 +1377,15 @@ static int gdbstub_net_accept()
 
     remote_len = sizeof(gdb_remote_addr_g);
     // Disconnect last connection if there was any.
-    if (cs_g >= 0)
-        disconnect(cs_g);
+    gdbstub_net_disconnect();
     cs_g = accept(sh_g, (struct sockaddr *)&gdb_remote_addr_g, &remote_len);
 
     if (cs_g < 0) {
         gdbstub_error("Accept failed.\n");
-        disconnect(sh_g); // Clean-up on failures.
         return -1;
     }
 
+    gdbstub_connection_generation++;
     FD_ZERO(&comms_fd_g);
     FD_SET(cs_g, &comms_fd_g);
 
@@ -1346,8 +1398,9 @@ static int gdbstub_net_accept()
 
 void gdbstub_net_close()
 {
-    disconnect(cs_g);
-    disconnect(sh_g);
+    gdbstub_net_disconnect();
+    if (sh_g >= 0) disconnect(sh_g);
+    sh_g = -1;
     gdbstub_printf(DEBUG_COMMSINIT, "disconnected\n");
 
     return;
@@ -1414,7 +1467,6 @@ int gdb_stub_main(int argc, char *argv[])
 
     if (gdbstub_init(argc, argv) == -1) {
         gdbstub_error("INIT FAILED\n");
-        ExitDeleteThread();
         return -1;
     }
 

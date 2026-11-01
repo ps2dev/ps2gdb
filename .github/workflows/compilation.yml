@@ -2,6 +2,7 @@ name: CI-compile
 
 on:
   push:
+  pull_request:
 
 jobs:
   build:
@@ -16,9 +17,9 @@ jobs:
         run: |
           apk add build-base git
 
-      - name: Compile build
+      - name: Compile and test (PS2 + native C)
         run: |
-          make clean all
+          make clean all check check-gdb
 
       - name: Upload sample
         if: ${{ success() }}
