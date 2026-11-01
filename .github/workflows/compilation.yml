@@ -73,6 +73,7 @@ jobs:
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdbstub_poll_interrupt'
           gcc -std=c99 -Wall -Wextra -Werror tests/ctrlc_rsp_client.c -o /tmp/ctrlc_rsp_client
 
+  native-tests:
     name: Native C tests (${{ matrix.compiler }}, ASan + UBSan)
     runs-on: ubuntu-latest
     strategy:
