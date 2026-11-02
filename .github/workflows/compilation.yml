@@ -74,6 +74,12 @@ jobs:
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_dec'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_branch'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_delay'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_context_candidate.o | grep -q 'ee_context_candidate_only'
+          mips64r5900el-ps2-elf-objdump -d tests/preemptive/ee_context_candidate.o > /tmp/ee_context_candidate.dis
+          test "$(grep -c -E '[[:space:]]sq[[:space:]].*\(k0\)' /tmp/ee_context_candidate.dis)" -eq 32
+          grep -q 'sq[[:space:]]*ra,496(k0)' /tmp/ee_context_candidate.dis
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ee_context_candidate_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ee_context_candidate_only'
 
   cooperative-ctrlc-build:
     name: EE cooperative Ctrl-C compile-only

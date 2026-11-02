@@ -213,6 +213,47 @@ entry with BD, EPC, GPR, HI/LO, SA, FPU and thread ownership preserved.
 
 ## Why this is not yet preemptive GDB
 
+### Compile-only register-frame candidate
+
+The next milestone now has an **unlinked object**, not a running exception
+handler: `tests/preemptive/ee_context_candidate.S`. Its only entry assumes
+`$k0` already contains a valid, 16-byte-aligned frame address. Under that
+assumption it uses `sq` to record 30 complete 128-bit GPRs (0-25 and 28-31),
+128-bit LO/HI, SA, LO1/HI1 and the currently readable CP0 EPC/Cause/Status.
+It does not call the kernel, patch an instruction, install a vector, switch
+stacks, or execute `eret`. **It is never linked into a hardware test ELF or
+the production debugger**, and must not be called from an interrupt handler.
+
+The missing GPRs are not merely an assembler oversight: using `$k0` as the
+frame pointer has already destroyed the previous `$k0` value. The standard
+EE kernel vector may also have changed `$k0` and `$k1` before dispatching a
+registered handler. The publicly available PS2SDK syscall-wrapper source
+does not establish a contract for recovering their original values. The
+snapshot prototype therefore does **not** claim either register or preserve
+an interrupted application's complete state. Its CP0 reads are also values
+at **invocation time**, not proven exception-entry values; its FPU and
+interrupted thread identity remain uncaptured.
+
+`tests/preemptive/ee_context_candidate.h` defines a 720-byte aligned frame
+with explicit per-register and provenance validity masks. The
+`ee_context_is_complete()` gate rejects incomplete GPR masks, missing
+entry-time CP0/branch-delay data, missing FPU/thread evidence, or unaligned
+EPC. The prototype does not set any of those masks itself. This avoids
+exposing an untrusted partial observation as a restorable GDB stop frame.
+
+The native C test `tests/ee_context_candidate_test.c` checks the snapshot
+offsets, the older `gdb_regs_ps2` ABI, preservation of all 16 bytes of each
+GPR, and the refusal to resume incomplete/unaligned/unknown-thread frames.
+The EE object is cross-compiled but never linked or run; CI additionally
+checks its disassembly and its absence from the runnable probes.
+
+The next step before **any** live preemptive handoff is to establish the
+actual EE kernel interrupt-vector entry contract and a non-destructive
+means of reading the interrupted thread's original saved context, including
+`k0/k1` and entry-time BD/EPC. Only then can the candidate be extended to
+capture and restore 128-bit GPR, FPU, and special-register state, with
+deterministic exact-once instruction replay on `continue`.
+
 The PS2SDK `ee_thread_status_t` returned by `ReferThreadStatus()` contains
 thread metadata (stack, priority, status) but **no saved GPR/PC register
 frame**. The `AddIntcHandler2()` callback provides an address-like third
