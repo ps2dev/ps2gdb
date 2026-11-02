@@ -11,10 +11,11 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
+check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
 	./tests/r5900_rsp_test
 	./tests/registers_test
 	./tests/ee_context_candidate_test
+	./tests/ee_bootstrap_vector_audit --self-test
 	./tests/hw_breakpoint_state_test
 	sh tests/check_protocol.sh
 
@@ -54,6 +55,9 @@ tests/registers_test: tests/registers_test.c ee/r5900-registers.h ee/r5900-rsp.h
 tests/ee_context_candidate_test: tests/ee_context_candidate_test.c tests/preemptive/ee_context_candidate.h ee/gdb-stub.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
+tests/ee_bootstrap_vector_audit: tests/ee_bootstrap_vector_audit.c
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
 tests/hw_breakpoint_state_test: tests/hw_breakpoint_state_test.c ee/hw-breakpoint-state.h ee/r5900-rsp.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
@@ -73,4 +77,4 @@ install:
 clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
+	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client

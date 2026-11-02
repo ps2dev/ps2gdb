@@ -254,6 +254,67 @@ means of reading the interrupted thread's original saved context, including
 capture and restore 128-bit GPR, FPU, and special-register state, with
 deterministic exact-once instruction replay on `continue`.
 
+### Read-only bootstrap-vector audit (not the live interrupt vector)
+
+The EE distinguishes the normal RAM interrupt vector (`0x80000200`) from
+the bootstrap ROM interrupt vector (`0xBFC00400`) when the corresponding
+bootstrap-vector mode is enabled. See [ps2tek's EE exception-vector
+reference](https://israpps.github.io/ps2tek/). The standard PS2SDK public
+`AddIntcHandler2()` wrapper does not describe the internal save frame.
+
+`tests/ee_bootstrap_vector_audit.c` is a native **C-only, read-only** audit
+for an optional, locally owned raw EE BIOS image. It recognizes the
+bootstrap-vector sequence that loads an address into `k0` and uses
+`jalr k1,k0` to enter a shared save helper. On this path, **both original
+`k0` and `k1` are overwritten before that helper can save them**. The
+recognized helper uses 32 consecutive `sd` operations (8 bytes per slot),
+with zero stored in slots 26 and 27 rather than the original `k0/k1` values.
+Consequently, even the other registers are only captured as **64 bits**
+on this particular bootstrap path, not complete 128-bit R5900 GPR values.
+
+The tool's fixture tests verify all 32 stores, the entry-to-helper jump,
+short-image rejection, and rejection of modified `k0` or jump instructions.
+It matched two existing local PCSX2 BIOS references (V6 PAL and V12 PAL):
+
+<!-- markdownlint-disable MD013 -->
+```text
+BOOTSTRAP_ONLY helper_offset=0x0680 gpr_slots=32 slot_width=64 k0_saved=0 k1_saved=0
+```
+<!-- markdownlint-enable MD013 -->
+
+The raw BIOS images and any extracted disassembly **remain local**, outside
+the repository; CI only executes synthetic tests. To inspect another local
+reference without copying or uploading it:
+
+```sh
+make tests/ee_bootstrap_vector_audit
+./tests/ee_bootstrap_vector_audit --self-test
+./tests/ee_bootstrap_vector_audit --bios "/path/to/your/local/BIOS.bin"
+```
+
+**Crucial limitation:** this only proves the **bootstrap ROM** path on the
+tested reference images. It does **not** establish the save logic of the
+normal **live RAM** vector at `0x80000200`, the active console firmware,
+or the behavior of any custom level-2 debug handler. It cannot be used as
+evidence that a preemptive debugger can safely resume from a callback.
+
+For an additional physical-PS2 cross-check, PS2Link's read-only `dumpmem`
+returned 64 bytes from the application's known mapped address `0x00101114`,
+and 1024 bytes from mapped low memory `0x00081f00`. In contrast, attempted
+1024-byte reads from the physical vector page `0x00000000` and its KSEG0
+alias `0x80000000` produced empty host files. PS2Link still responded to
+ping after those attempts, and no IOP reset or kernel write occurred. An
+empty dump is **not** a valid vector image, and no runtime ABI conclusions
+are derived from it. The low-memory `0x00081f00` region is not equivalent
+to an image of `0x80000200`.
+
+The next research milestone must obtain the **actual installed RAM entry**
+through an explicitly validated read-only mechanism (possibly PCSX2's
+debugger or a documented kernel-mode copy operation), then compare its
+first instructions and saved register locations against the bootstrap
+reference. Until then the candidate frame's `k0/k1`, thread, FPU and
+entry-time BD/EPC validity flags remain unset.
+
 The PS2SDK `ee_thread_status_t` returned by `ReferThreadStatus()` contains
 thread metadata (stack, priority, status) but **no saved GPR/PC register
 frame**. The `AddIntcHandler2()` callback provides an address-like third
