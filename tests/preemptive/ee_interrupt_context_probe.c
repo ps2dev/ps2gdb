@@ -98,6 +98,8 @@ int main(void)
     run_unyielding_busy_loop();
 
     old_intr = DIntr();
+    /* Match PS2SDK's VBlank teardown: mask before removing the callback. */
+    DisableIntc(INTC_VBLANK_S);
     RemoveIntcHandler(INTC_VBLANK_S, handler_id);
     if (old_intr) EIntr();
     hits = irq_hits;
@@ -118,7 +120,8 @@ int main(void)
            first_handler_status, last_handler_status);
     printf("PS2GDB_PREEMPT_PROBE_DONE status=%d\n", ok ? 0 : 2);
     fflush(stdout);
-    /* Leave PS2Link running; recovery is via ps2client reset (host EE only). */
+    /* Do not return to the OSD. The PS2Link launcher retains this sleeping
+     * user thread, so another execee requires a fresh launcher session. */
     SleepThread();
     for (;;) SleepThread();
 }

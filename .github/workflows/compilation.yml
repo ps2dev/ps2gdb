@@ -66,11 +66,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build requirements
         run: apk add build-base git
-      - name: Build VBlank context probe, never execute it in CI
+      - name: Build VBlank context and branch-delay probes, never execute in CI
         run: |
           make preemptive-probe-build
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_probe_busy_begin'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_probe_busy_end'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_dec'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_branch'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_delay'
 
   cooperative-ctrlc-build:
     name: EE cooperative Ctrl-C compile-only
