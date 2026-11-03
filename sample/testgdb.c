@@ -55,7 +55,8 @@ int main(int argc, char *argv[])
         printf("PS2GDB_SAMPLE_DONE status=1\n");
     }
     fflush(stdout);
-    /* Keep PS2Link alive; return to it with ps2client reset. */
+    /* Keep PS2Link alive. Do not use ps2client reset when preserving IOP
+     * state: this PS2Link handler calls SifIopReset(). */
     SleepThread();
     for (;;) SleepThread();
 }

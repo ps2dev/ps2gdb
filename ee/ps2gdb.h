@@ -24,6 +24,9 @@ void gdbstub_close(void);
  * Call on the single EE thread being debugged, e.g. once per game frame.
  * While running, checks the GDB TCP socket without blocking and enters the
  * normal register-preserving exception path if GDB sent its raw 0x03 byte.
+ * PS2GDB_CTRL_C_RECEIVER=1 adds a dedicated EE socket-reader thread;
+ * the debugged application must STILL call this function at a safe point.
+ * This is an opt-in, cooperative feature, not arbitrary preemption.
  * No polling or TCP work occurs in an exception/interrupt handler.
  * This is NOT a preemptive stop of an arbitrary uninstrumented EE thread.
  */

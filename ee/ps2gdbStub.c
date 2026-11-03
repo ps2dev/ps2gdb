@@ -20,6 +20,12 @@
 #include "ps2gdb.h"
 #include "r5900-registers.h"
 #include "inst.h"
+#ifdef PS2GDB_CTRL_C_RECEIVER
+#ifndef PS2GDB_CTRL_C_COOPERATIVE
+#error PS2GDB_CTRL_C_RECEIVER requires PS2GDB_CTRL_C_COOPERATIVE
+#endif
+#include "ctrlc-receiver.h"
+#endif
 #ifdef PS2GDB_HW_EXPERIMENTAL
 #include <ee_debug.h>
 #include "hw-debug.h"
@@ -1075,6 +1081,12 @@ void handle_exception(gdb_regs_ps2 *ps2_regs)
     char *ptr, *ptr2;
     struct gdb_regs *regs = &gdbstub_regs;
 
+#ifdef PS2GDB_CTRL_C_RECEIVER
+    /* A stopped GDB packet parser must have exclusive socket ownership. */
+    gdbstub_running_g = 0;
+    ps2gdb_receiver_pause();
+#endif
+
     // I probably flush the caches unnessisarily, in the process of 'bodging it until it works'.
     flush_cache_all();
 
@@ -1451,6 +1463,10 @@ ret:
     gdbstub_cooperative_sigint_g = 0;
     gdbstub_last_poll_count = 0;
     gdbstub_running_g = (cs_g >= 0);
+#ifdef PS2GDB_CTRL_C_RECEIVER
+    if (gdbstub_running_g)
+        ps2gdb_receiver_resume(cs_g, gdbstub_connection_generation);
+#endif
 #endif
     gdbstub_vanilla_to_ps2regs(ps2_regs, regs);
     flush_cache_all();
@@ -1648,6 +1664,13 @@ int gdbstub_init(int argc, char *argv[])
         return -1;
     }
 
+#ifdef PS2GDB_CTRL_C_RECEIVER
+    if (ps2gdb_receiver_init() < 0) {
+        gdbstub_net_close();
+        return -1;
+    }
+#endif
+
     for (ht = hard_trap_info; ht->tt && ht->signo; ht++) {
         if (ht->tt < 4)
             SetVTLBRefillHandler(ht->tt, trap_low);
@@ -1674,6 +1697,9 @@ void gdbstub_close()
     gdbstub_running_g = 0;
     gdbstub_cooperative_sigint_g = 0;
 #endif
+#ifdef PS2GDB_CTRL_C_RECEIVER
+    ps2gdb_receiver_close();
+#endif
 #ifdef PS2GDB_HW_EXPERIMENTAL
     ps2gdb_hw_close();
 #endif
@@ -1690,13 +1716,41 @@ void gdbstub_close()
 void gdbstub_poll_interrupt(void)
 {
 #ifdef PS2GDB_CTRL_C_COOPERATIVE
+#ifndef PS2GDB_CTRL_C_RECEIVER
     unsigned char ch;
     unsigned int now;
     int count;
+#endif
 
     if (!gdbstub_initialised_g || !gdbstub_running_g || cs_g < 0)
         return;
 
+#ifdef PS2GDB_CTRL_C_RECEIVER
+    /* While running, only the receiver consumes socket data. The
+     * application still performs its own level-1 BREAK at a safe point.
+     * Buffered bytes from the previous RSP packet are consumed here
+     * before any further normal RSP parsing can resume. */
+    if (ps2gdb_receiver_take_interrupt()) {
+        gdbstub_running_g = 0;
+        gdbstub_cooperative_sigint_g = 1;
+        breakpoint();
+    } else if (recv_buf_pos < recv_buf_len) {
+        unsigned char buffered = (unsigned char)gdbstub_recv_buffer_g[recv_buf_pos++];
+        if (buffered == 0x03) {
+            gdbstub_running_g = 0;
+            gdbstub_cooperative_sigint_g = 1;
+            breakpoint();
+        } else {
+            gdbstub_running_g = 0;
+            ps2gdb_receiver_pause();
+            gdbstub_net_disconnect();
+        }
+    } else if (ps2gdb_receiver_take_disconnect()) {
+        gdbstub_running_g = 0;
+        ps2gdb_receiver_pause();
+        gdbstub_net_disconnect();
+    }
+#else
     /* Never flood PS2IPS with an RPC on every iteration of a busy loop. */
     __asm__ volatile("mfc0 %0, $9" : "=r"(now));
     if ((unsigned int)(now - gdbstub_last_poll_count) < GDBSTUB_CTRL_C_POLL_TICKS)
@@ -1717,6 +1771,7 @@ void gdbstub_poll_interrupt(void)
         gdbstub_running_g = 0;
         gdbstub_net_disconnect();
     }
+#endif
 #else
     /* Ordinary builds have no asynchronous socket-reader behavior. */
 #endif
