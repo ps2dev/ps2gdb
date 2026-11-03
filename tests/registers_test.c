@@ -25,6 +25,8 @@ int main(void)
     registers.cp0_status = 0x12345678;
     registers.cp0_epc = 0x00101120;
     registers.reg29 = 0x11111111;
+    registers.cp1_fsr = 0x01000001;
+    registers.cp1_fir = 0x00002e30;
     r5900_rsp_set_low64(&frame.reg29, 0x123456789abcdef0ULL);
     /* Upper 64-bit half of GPR29 is not represented in GDB's wire schema. */
     memcpy((char *)&frame.reg29 + 8, "PRESERVE", 8);
@@ -43,6 +45,10 @@ int main(void)
           value == 0x1122334455667788ULL, "register 34 is HI");
     check(r5900_rsp_decode_u64(reply + 37*16, &value) &&
           value == 0x101120, "register 37 is PC");
+    check(r5900_rsp_decode_u64(reply + 70*16, &value) &&
+          value == 0x01000001, "register 70 is COP1 FCSR, not FPR31");
+    check(r5900_rsp_decode_u64(reply + 71*16, &value) &&
+          value == 0x00002e30, "register 71 is COP1 FIR, not FPR0");
     {
         char reg_hex[R5900_RSP_REG_HEX + 1];
         r5900_rsp_encode_u64(reg_hex, 0x0123456789abcdefULL);
@@ -57,6 +63,9 @@ int main(void)
           "G packet preserves upper64 of register");
     check(registers.reg29 == 0x89abcdefu && registers.cp0_epc == 0x103450u,
           "G packet updates saved registers and program counter");
+    check(registers.cp1_fsr == 0x01000001 &&
+          registers.cp1_fir == 0x00002e30,
+          "G packet retains separate COP1 control registers");
     reply[100] = '?';
     check(!r5900_rsp_decode_registers(reply, &frame, &registers),
           "invalid G packet rejected");
