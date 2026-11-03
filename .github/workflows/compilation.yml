@@ -80,6 +80,11 @@ jobs:
           grep -q 'sq[[:space:]]*ra,496(k0)' /tmp/ee_context_candidate.dis
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ee_context_candidate_only'
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ee_context_candidate_only'
+          # The standalone probes must be cleaned by the root clean target.
+          make -C tests/preemptive clean
+          test ! -e tests/preemptive/ee_interrupt_context_probe.elf
+          test ! -e tests/preemptive/ee_branch_delay_probe.elf
+          test ! -e tests/preemptive/ee_context_candidate.o
 
   cooperative-ctrlc-build:
     name: EE cooperative Ctrl-C compile-only

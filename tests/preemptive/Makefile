@@ -3,7 +3,7 @@ EE_OBJS = ee_interrupt_context_probe.o
 BRANCH_BIN = ee_branch_delay_probe.elf
 BRANCH_OBJS = ee_branch_delay_probe.o
 CONTEXT_OBJ = ee_context_candidate.o
-EE_CFLAGS += -g -Wall
+EE_CFLAGS += -g -Wall -Wextra -Werror
 
 all: $(EE_BIN) $(BRANCH_BIN) $(CONTEXT_OBJ)
 
