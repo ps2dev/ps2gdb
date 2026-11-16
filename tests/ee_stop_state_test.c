@@ -15,6 +15,8 @@ int main(void)
 {
     struct ps2gdb_stop_state state = {0};
     ee_context_candidate frame = {0};
+    /* Keep these unsafe masks as runtime inputs to test the rejection path. */
+    volatile uint32_t unsafe_masks[2] = {0, 0xffff0000u};
 
     expect(!ps2gdb_stop_begin(&state, 1, 16, 16,
                               0x00100000u, 0x00200000u, 0),
@@ -51,10 +53,10 @@ int main(void)
                PS2GDB_STOP_IGNORE,
            "trusted owner alone cannot prove thread exclusivity");
     expect(ps2gdb_stop_observe(&state, 1, 16, 0x00101118u, 1,
-                               1, 0) ==
+                               1, unsafe_masks[0]) ==
                PS2GDB_STOP_IGNORE, "wildcard comparator never arms");
     expect(ps2gdb_stop_observe(&state, 1, 16, 0x00101118u, 1,
-                               1, 0xffff0000u) ==
+                               1, unsafe_masks[1]) ==
                PS2GDB_STOP_IGNORE, "region comparator is not thread selective");
     expect(ps2gdb_stop_observe(&state, 1, 16, 0x00101118u, 1,
                                1, UINT32_MAX) ==

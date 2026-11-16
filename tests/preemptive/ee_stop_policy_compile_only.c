@@ -6,9 +6,9 @@
 #include "ee_stop_state.h"
 #include <ee_cop0_defs.h>
 
-#if PS2GDB_STOP_BPC_BED != EE_BPC_BED
-#error Stop-policy disable-bit contract differs from the installed PS2SDK
-#endif
+/* Fail at compile time if the model disagrees with the installed EE SDK. */
+typedef char ps2gdb_bpc_disable_bit_matches_sdk[
+    PS2GDB_STOP_BPC_BED == EE_BPC_BED ? 1 : -1];
 
 int ps2gdb_stop_policy_compile_only(void)
 {
