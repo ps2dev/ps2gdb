@@ -13,6 +13,10 @@ endif
 ifeq ($(PS2GDB_CTRL_C_COOPERATIVE),1)
     EE_CFLAGS += -DPS2GDB_CTRL_C_COOPERATIVE
 endif
+ifeq ($(PS2GDB_CTRL_C_RECEIVER),1)
+    EE_OBJS += ctrlc-receiver.o
+    EE_CFLAGS += -DPS2GDB_CTRL_C_COOPERATIVE -DPS2GDB_CTRL_C_RECEIVER
+endif
 PS2GDB_INSTALL_PREFIX ?= $(PS2SDK)/ports
 
 EE_CFLAGS += -g -w
@@ -36,7 +40,7 @@ install: all
 	install -m 644 ps2gdb.h "$(PS2GDB_INSTALL_PREFIX)/include/"
 
 clean:
-	rm -rf $(EE_OBJS) $(EE_LIB) $(EE_LIB_DIR)
+	rm -rf $(EE_OBJS) ctrlc-receiver.o hw-debug.o hw-exception.o $(EE_LIB) $(EE_LIB_DIR)
 
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal

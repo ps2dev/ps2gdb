@@ -94,6 +94,29 @@ of arbitrary uninstrumented EE code; two consecutive SIGINT stops and clean
 detach were validated on real PS2 at 192.168.31.10.
 See docs/EE_CTRL_C_INVESTIGATION.md for test results and safety limits.
 
+Separate Ctrl-C reader thread (opt-in, still cooperative):
+  make clean
+  make PS2GDB_CTRL_C_RECEIVER=1 all
+
+This option puts a dedicated EE thread in charge of receiving raw Ctrl-C
+bytes while the application is running. The stopped GDB packet parser owns
+the TCP socket at all other times. The target application STILL needs to
+call gdbstub_poll_interrupt() to stop safely on its own thread. This mode
+does not use hardware breakpoints, modify exception vectors, or provide
+preemptive interruption. A real-PS2 smoke test with two SIGINT stops and
+detach was performed in the research branch. Native tests also exercise
+socket ownership, session generations, disconnects and repeated handoffs.
+The standalone integration was revalidated on real PS2 hardware on
+November 16, 2026, with `PS2GDB_CTRL_C_RECEIVER=1` and
+`tests/ctrlc_rsp_client`: the initial `S05` stop, two consecutive `T02`
+SIGINT stops (the first after 2.5 seconds of execution), and detach all
+passed. Following a host-side PS2Link reset, a fresh real GNU R5900 GDB
+session also passed register reads, a source breakpoint at testgdb.c:31,
+reading local variable `i`, single-instruction stepping, and detach.
+PS2Link remained responsive to host pings after both sessions. These
+smoke tests do not establish preemptive interruption or comprehensive
+stepping/breakpoint coverage in arbitrary applications.
+
 CI validation (no physical PS2 required):
   make clean all check check-gdb check-install
   make clean debug

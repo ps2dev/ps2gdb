@@ -11,12 +11,14 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
+check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
 	./tests/r5900_rsp_test
 	./tests/registers_test
 	./tests/ee_context_candidate_test
 	./tests/ee_bootstrap_vector_audit --self-test
 	./tests/hw_breakpoint_state_test
+	./tests/ctrlc_receiver_state_test
+	./tests/ctrlc_receiver_transport_test
 	sh tests/check_protocol.sh
 
 # Builds the EE hardware exception probe but never runs it automatically.
@@ -43,6 +45,12 @@ check-gdb: tests/mock_rsp_server
 
 tests/ctrlc_rsp_client: tests/ctrlc_rsp_client.c
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
+tests/ctrlc_receiver_state_test: tests/ctrlc_receiver_state_test.c ee/ctrlc-receiver-state.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
+tests/ctrlc_receiver_transport_test: tests/ctrlc_receiver_transport_test.c ee/ctrlc-receiver-state.h
+	$(HOST_CC) $(HOST_CFLAGS) -pthread $< -o $@
 
 # The mock server is used for host-to-host integration with PS2DEV GDB.
 # Building it in CI also ensures its native C sources stay portable.
@@ -78,4 +86,4 @@ clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
 	$(MAKE) -C tests/preemptive clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client
+	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
