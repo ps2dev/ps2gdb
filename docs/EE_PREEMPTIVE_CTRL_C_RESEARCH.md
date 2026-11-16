@@ -339,6 +339,31 @@ running instruction based only on an unvalidated callback address. The
 previous hardware-debug work already established that a debugger's own
 cache-flush wrapper can recurse if it gets temporarily patched.
 
+### Next isolated milestone: fail-closed stop policy
+
+The unmerged preemption research was audited after PRs #13 and #14 were
+integrated. This continuation imports only a pure, host-testable stop-request
+state model and its compile-only EE check. No vector, hardware comparator,
+network receiver, or production exception code is changed in this branch.
+The model rejects stops unless an independently trusted target-thread
+identity, exclusive target execution, an exact-PC comparator, and a
+complete frame can all be proven. Wrong-thread events enter quarantine:
+the comparator must be confirmed disabled using live BPC.BED readback
+before the single permitted retry. A repeated wrong-thread event aborts.
+The context gate additionally requires proven FPU accumulator and full-width
+HI/LO provenance. The model's synthetic proof inputs do **not** constitute
+physical-PS2 validation of any of these conditions.
+
+An earlier isolated exact-PC level-2 diagnostic preserved original wide
+`k0/k1` through a GDB stop and resume on one physical PS2 test. That result
+does not establish thread-selective interruption, nested exception safety,
+arbitrary ACC/FPU state, or correct BD2/ErrorEPC replay. The triggered
+SDK-owned level-2 frame experiments also caused hangs; the SDK frame cannot
+be treated as a complete restorable application context. Future live work
+must validate target selection, full entry-time state and exact-once resume
+separately before connecting the already-merged cooperative receiver to
+preemptive hardware stops.
+
 ## Build and manually execute
 
 ```sh

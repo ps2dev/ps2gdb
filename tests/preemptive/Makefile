@@ -3,12 +3,13 @@ EE_OBJS = ee_interrupt_context_probe.o
 BRANCH_BIN = ee_branch_delay_probe.elf
 BRANCH_OBJS = ee_branch_delay_probe.o
 CONTEXT_OBJ = ee_context_candidate.o
+STOP_POLICY_OBJ = ee_stop_policy_compile_only.o
 EE_CFLAGS += -g -Wall -Wextra -Werror
 
-all: $(EE_BIN) $(BRANCH_BIN) $(CONTEXT_OBJ)
+all: $(EE_BIN) $(BRANCH_BIN) $(CONTEXT_OBJ) $(STOP_POLICY_OBJ)
 
 clean:
-	rm -f $(EE_BIN) $(EE_OBJS) $(BRANCH_BIN) $(BRANCH_OBJS) $(CONTEXT_OBJ)
+	rm -f $(EE_BIN) $(EE_OBJS) $(BRANCH_BIN) $(BRANCH_OBJS) $(CONTEXT_OBJ) $(STOP_POLICY_OBJ)
 
 include $(PS2SDK)/samples/Makefile.pref
 include $(PS2SDK)/samples/Makefile.eeglobal
