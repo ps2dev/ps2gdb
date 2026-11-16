@@ -106,7 +106,16 @@ does not use hardware breakpoints, modify exception vectors, or provide
 preemptive interruption. A real-PS2 smoke test with two SIGINT stops and
 detach was performed in the research branch. Native tests also exercise
 socket ownership, session generations, disconnects and repeated handoffs.
-The standalone integration must be revalidated on hardware before review.
+The standalone integration was revalidated on real PS2 hardware on
+November 16, 2026, with `PS2GDB_CTRL_C_RECEIVER=1` and
+`tests/ctrlc_rsp_client`: the initial `S05` stop, two consecutive `T02`
+SIGINT stops (the first after 2.5 seconds of execution), and detach all
+passed. Following a host-side PS2Link reset, a fresh real GNU R5900 GDB
+session also passed register reads, a source breakpoint at testgdb.c:31,
+reading local variable `i`, single-instruction stepping, and detach.
+PS2Link remained responsive to host pings after both sessions. These
+smoke tests do not establish preemptive interruption or comprehensive
+stepping/breakpoint coverage in arbitrary applications.
 
 CI validation (no physical PS2 required):
   make clean all check check-gdb check-install
