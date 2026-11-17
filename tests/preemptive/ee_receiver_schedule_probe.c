@@ -57,7 +57,7 @@ int main(void)
 {
     ee_thread_t thread = {0};
     ee_thread_status_t status = {0};
-    int id = -1, main_priority = -1, observer_priority = -1, started = 0;
+    int id, main_priority = -1, observer_priority = -1, started = 0;
     unsigned int before = 0;
     int attempt;
 

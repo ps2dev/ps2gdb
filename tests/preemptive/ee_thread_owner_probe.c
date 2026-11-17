@@ -44,11 +44,11 @@ __attribute__((noinline)) static void unyielding_loop(unsigned int phase)
 static int observe_vblank(int cause, void *user, void *addr)
 {
     unsigned int phase = active_phase;
-    int observed_id;
     (void)cause;
     (void)user;
 
     if (phase == OWNER_MAIN_PHASE || phase == OWNER_WORKER_PHASE) {
+        int observed_id;
         /*
          * The syscall result is an empirical observation, NOT a trusted
          * assertion that the saved application context belongs to this ID.

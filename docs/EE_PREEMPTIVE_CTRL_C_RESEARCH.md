@@ -425,8 +425,8 @@ PCSX2 2.9.146 ran this in both EE modes, with the following results:
 
 | Scenario | EE recompiler | EE interpreter |
 | --- | --- | --- |
-| Default target priority 1, observer priority 1 | 0 ticks during loop | 0 ticks during loop |
-| Opt-in target priority 64, observer priority 63 | 26 ticks during loop | 24 ticks during loop |
+| Default: target 1, observer 1 | 0 ticks | 0 ticks |
+| Opt-in: target 64, observer 63 | 26 ticks | 24 ticks |
 
 The priority-change variant is compiled only with the explicit
 PS2GDB_SCHED_LOWER_TARGET_PRIORITY=1 Makefile option. That variant
