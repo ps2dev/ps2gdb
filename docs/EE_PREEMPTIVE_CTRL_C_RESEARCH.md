@@ -469,6 +469,24 @@ notification is another candidate, but would need its own transport and
 safe exception handoff. No approach here captures an arbitrary target's
 register frame or proves safe preemptive GDB stop/resume.
 
+On November 17, 2026, an operator-authorized PS2Link reset restored the
+EE launch slot on the physical console. The first immediate ping failed;
+a bounded follow-up ping succeeded in 19 ms. The default, unmodified
+priority-1 scheduling probe then completed on the same PS2:
+
+<!-- markdownlint-disable MD013 -->
+```text
+PS2GDB_SCHED_PROBE_DONE started=1 main_priority=1 observer_priority=1 ticks_before=5 ticks_total=5 during_busy=0 busy_iterations=7499752 observer_exited=1
+```
+<!-- markdownlint-enable MD013 -->
+
+PS2Link answered the post-test ping in 17 ms. No hardware debug
+breakpoint, exception-vector replacement or additional reset was used.
+The result confirms on one physical PS2 that an equal-priority observer
+can be starved for the duration of this busy loop. The priority-adjusted
+probe has not yet been run on physical hardware; the default probe is
+now sleeping and holds the EE launch slot.
+
 ## Build and manually execute
 
 ```sh
