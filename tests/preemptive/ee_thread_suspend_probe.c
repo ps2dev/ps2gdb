@@ -77,15 +77,16 @@ int main(void)
     ee_thread_t thread = {0};
     ee_thread_status_t self = {0};
     ee_thread_status_t observer_status = {0};
-    int observer_id = -1, started = 0, main_priority = -1;
+    int started = 0, main_priority = -1;
     int observer_actual_priority = -1;
-    int i, passed;
+    int passed;
 
     target_thread_id = GetThreadId();
     if (ReferThreadStatus(TH_SELF, &self) >= 0)
         main_priority = self.current_priority;
 
     if (main_priority == 1) {
+        int observer_id;
         thread.func = observer;
         thread.stack = observer_stack;
         thread.stack_size = sizeof(observer_stack);
@@ -103,6 +104,7 @@ int main(void)
         }
     }
     if (started) {
+        int i;
         unyielding_target();
         for (i = 0; i < 100 && !observer_done; ++i)
             DelayThread(1000);

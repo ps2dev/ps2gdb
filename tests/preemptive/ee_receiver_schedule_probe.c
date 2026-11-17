@@ -84,10 +84,11 @@ int main(void)
 #endif
     if (ReferThreadStatus(TH_SELF, &status) >= 0) {
         main_priority = status.current_priority;
-        observer_priority = main_priority > 1 ? main_priority - 1 : 1;
 #ifdef PS2GDB_SCHED_OBSERVER_PRIORITY
         /* Only a controlled, standalone probe may attempt priority zero. */
         observer_priority = PS2GDB_SCHED_OBSERVER_PRIORITY;
+#else
+        observer_priority = main_priority > 1 ? main_priority - 1 : 1;
 #endif
         thread.func = observer;
         thread.stack = observer_stack;
