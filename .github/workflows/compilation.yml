@@ -89,6 +89,8 @@ jobs:
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_owner_probe.elf | grep -q 'ps2gdb_owner_busy_end'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_sched_busy_begin'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_sched_busy_end'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ps2gdb_suspend_loop_begin'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ResumeThread'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_context_candidate.o | grep -q 'ee_context_candidate_only'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_stop_policy_compile_only.o | grep -q 'ps2gdb_stop_policy_compile_only'
           mips64r5900el-ps2-elf-objdump -d tests/preemptive/ee_context_candidate.o > /tmp/ee_context_candidate.dis
@@ -100,11 +102,15 @@ jobs:
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_owner_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
           # The alternative scheduling probe is a separate opt-in build;
           # compile it without running it or touching a live debug target.
           make -C tests/preemptive clean
           make -C tests/preemptive PS2GDB_SCHED_TARGET_PRIORITY=2 ee_receiver_schedule_probe.elf
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ChangeThreadPriority'
+          make -C tests/preemptive clean
+          make -C tests/preemptive PS2GDB_SCHED_OBSERVER_PRIORITY=0 ee_receiver_schedule_probe.elf
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ReferThreadStatus'
           # The standalone probes must be cleaned by the root clean target.
           make -C tests/preemptive clean
           test ! -e tests/preemptive/ee_interrupt_context_probe.elf
@@ -112,6 +118,7 @@ jobs:
           test ! -e tests/preemptive/ee_context_candidate.o
           test ! -e tests/preemptive/ee_thread_owner_probe.elf
           test ! -e tests/preemptive/ee_receiver_schedule_probe.elf
+          test ! -e tests/preemptive/ee_thread_suspend_probe.elf
           test ! -e tests/preemptive/ee_stop_policy_compile_only.o
 
   cooperative-ctrlc-build:

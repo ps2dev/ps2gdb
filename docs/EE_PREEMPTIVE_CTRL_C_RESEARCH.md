@@ -451,6 +451,7 @@ PCSX2 2.9.146 ran this in both EE modes, with the following results:
 | Default: target 1, observer 1 | 0 ticks | 0 ticks |
 | Opt-in: target 64, observer 63 | 26 ticks | 24 ticks |
 | Opt-in: target 2, observer 1 | 26 ticks | 24 ticks |
+| Opt-in: target 1, observer 0 | 26 ticks | 24 ticks |
 
 The priority-change variant is compiled only with the explicit
 PS2GDB_SCHED_LOWER_TARGET_PRIORITY=1 Makefile option. That variant
@@ -458,6 +459,17 @@ changes only the standalone test target, not the debugger or any game.
 The newer PS2GDB_SCHED_TARGET_PRIORITY=2 option provides an isolated
 target-priority control; in the emulator it also permitted the
 higher-priority observer to run while the target did not yield.
+The isolated PS2GDB_SCHED_OBSERVER_PRIORITY=0 experiment left the
+target at priority 1 and created an observer at priority 0.
+ReferThreadStatus() confirmed the observer's effective priority was 0
+in both PCSX2 modes; the observer still advanced during the busy loop
+and exited. This is a potential way to service a Ctrl-C request without
+altering the target's priority, but priority 0 is also used by PS2SDK's
+kernel top thread. Interrupt scheduling, socket/RPC progress, coexistence
+with kernel patches and PS2Link, and a physical-console recovery path
+have NOT been established. Do not wire this setting into the real
+Ctrl-C receiver or deploy this variant on PS2 hardware without a
+separate, controlled safety test.
 Both modes saw five observer ticks before the busy loop. A separate
 emulator-only attempt to rotate the priority-1 ready queue from VBlank
 reported 16 interrupt callbacks without enabling observer execution;
@@ -472,6 +484,42 @@ is not an acceptable transparent default. An IOP-originating interrupt
 notification is another candidate, but would need its own transport and
 safe exception handoff. No approach here captures an arbitrary target's
 register frame or proves safe preemptive GDB stop/resume.
+
+The scheduling probe now reports an explicit status field: a successful
+run requires a started and exited observer, a verified effective
+priority, a completed busy loop and observer activity during the loop
+when its priority is higher than the target's. It remains only an
+observation of scheduler progress, not a valid GDB stop or resume.
+
+### Target-specific kernel suspension (emulator only)
+
+An additional standalone test, tests/preemptive/ee_thread_suspend_probe.c,
+investigates whether a priority-0 observer can suspend and resume a
+known priority-1 EE target while it runs without polling or yielding.
+The observer calls SuspendThread(target_id), checks the target is
+suspended using ReferThreadStatus(), compares the target's iteration
+counter before and after a 50-ms sleep, then calls ResumeThread().
+It never installs a debug exception vector or hardware comparator.
+
+On PCSX2 2.9.146, both EE modes produced a successful result:
+
+| Observation | Recompiler | Interpreter |
+| --- | ---: | ---: |
+| SuspendThread result | 1 | 1 |
+| ResumeThread result | 1 | 1 |
+| Iterations before/after suspension | 2680650 / 2680650 | 2383014 / 2383014 |
+| Iterations after resuming | 12294383 | 10111954 |
+| Target reported suspended | Yes | Yes |
+
+This suggests that a specifically identified EE thread can be stopped
+and resumed through kernel scheduling without a CPU-wide comparator.
+It is NOT evidence that the kernel saves the full 128-bit EE GPRs,
+k0/k1, HI/LO, FPU ACC, FCSR or an exact GDB-readable EPC. Nor does it
+demonstrate safe coexistence with PS2Link or real-hardware behavior.
+The priority-0 observer can conflict with the SDK kernel top thread.
+The diagnostic is intentionally compile-only in CI and MUST NOT be
+launched on a physical console without an explicit, controlled plan.
+No such real-console test has been performed.
 
 On November 17, 2026, an operator-authorized PS2Link reset restored the
 EE launch slot on the physical console. The first immediate ping failed;

@@ -3,7 +3,9 @@
  * A higher-priority observer sleeps on the EE timer while a target burns
  * CPU without a yield or debugger polling. No handlers or comparators are
  * installed by this ELF. Never run on physical PS2 automatically.
- * The opt-in priority variant changes only this test target's scheduling.
+ * The opt-in priority variants affect only this diagnostic, not ps2gdb.
+ * Priority zero is an EE kernel priority; its use here is EMULATOR-ONLY
+ * until an isolated hardware trial proves it does not harm the scheduler.
  */
 #include <kernel.h>
 #include <delaythread.h>
@@ -15,6 +17,10 @@
 #if defined(PS2GDB_SCHED_TARGET_PRIORITY) && \
     (PS2GDB_SCHED_TARGET_PRIORITY < 1 || PS2GDB_SCHED_TARGET_PRIORITY > 127)
 #error PS2GDB_SCHED_TARGET_PRIORITY must be in the EE user priority range 1..127
+#endif
+#if defined(PS2GDB_SCHED_OBSERVER_PRIORITY) && \
+    (PS2GDB_SCHED_OBSERVER_PRIORITY < 0 || PS2GDB_SCHED_OBSERVER_PRIORITY > 127)
+#error PS2GDB_SCHED_OBSERVER_PRIORITY must be in range 0..127
 #endif
 
 static volatile unsigned int busy_active;
@@ -62,7 +68,10 @@ int main(void)
 {
     ee_thread_t thread = {0};
     ee_thread_status_t status = {0};
+    ee_thread_status_t observer_status = {0};
     int id, main_priority = -1, observer_priority = -1, started = 0;
+    int observer_actual_priority = -1;
+    int passed;
     unsigned int before = 0;
     int attempt;
 
@@ -76,6 +85,10 @@ int main(void)
     if (ReferThreadStatus(TH_SELF, &status) >= 0) {
         main_priority = status.current_priority;
         observer_priority = main_priority > 1 ? main_priority - 1 : 1;
+#ifdef PS2GDB_SCHED_OBSERVER_PRIORITY
+        /* Only a controlled, standalone probe may attempt priority zero. */
+        observer_priority = PS2GDB_SCHED_OBSERVER_PRIORITY;
+#endif
         thread.func = observer;
         thread.stack = observer_stack;
         thread.stack_size = sizeof(observer_stack);
@@ -85,6 +98,8 @@ int main(void)
         if (id >= 0 && StartThread(id, NULL) >= 0) {
             started = 1;
             DelayThread(50000);
+            if (ReferThreadStatus(id, &observer_status) >= 0)
+                observer_actual_priority = observer_status.current_priority;
             before = observer_ticks;
             unyielding_target();
             observer_shutdown = 1;
@@ -95,8 +110,14 @@ int main(void)
         }
     }
 
-    printf("PS2GDB_SCHED_PROBE_DONE started=%d main_priority=%d observer_priority=%d ticks_before=%u ticks_total=%u during_busy=%u busy_iterations=%u observer_exited=%d\n",
-           started, main_priority, observer_priority, before,
+    passed = started && observer_exited &&
+             observer_actual_priority == observer_priority &&
+             busy_iterations > 0 &&
+             (observer_priority >= main_priority || observer_during_busy > 0);
+    printf("PS2GDB_SCHED_PROBE_DONE status=%d started=%d main_priority=%d observer_priority=%d observer_actual_priority=%d ticks_before=%u ticks_total=%u during_busy=%u busy_iterations=%u observer_exited=%d\n",
+           passed ? 0 : 1,
+           started, main_priority, observer_priority,
+           observer_actual_priority, before,
            observer_ticks, observer_during_busy, busy_iterations,
            observer_exited);
     fflush(stdout);
