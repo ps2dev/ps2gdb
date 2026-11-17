@@ -87,6 +87,9 @@ int main(void)
           "raw Cause observation accessor");
     check(ee_context_status_value(&ctx) == 0x70030c10u,
           "raw Status observation accessor");
+    check(ee_context_can_sample_fpu(0x70030c10u), "COP1 enabled");
+    check(!ee_context_can_sample_fpu(0x50030c10u), "COP1 disabled");
+    check(!ee_context_can_sample_fpu(0), "COP1 unavailable");
 
     /* A candidate cannot be used to stop/resume: k0/k1 and the original
      * exception/thread/FPU provenance have not been validated. */
@@ -97,6 +100,12 @@ int main(void)
     check(!ee_context_is_complete(&ctx), "missing k0/k1 refuses resume");
     ctx.gpr_valid_mask = UINT32_MAX;
     check(ee_context_is_complete(&ctx), "synthetic complete-frame contract");
+    ctx.state_valid_mask &= ~EE_CTX_VALID_FPU_ACC;
+    check(!ee_context_is_complete(&ctx), "missing FPU accumulator provenance");
+    ctx.state_valid_mask = EE_CTX_REQUIRED_STATE;
+    ctx.state_valid_mask &= ~EE_CTX_VALID_HILO_WIDTH;
+    check(!ee_context_is_complete(&ctx), "missing 128-bit HI/LO provenance");
+    ctx.state_valid_mask = EE_CTX_REQUIRED_STATE;
     ctx.state_valid_mask &= ~EE_CTX_VALID_ENTRY_BD;
     check(!ee_context_is_complete(&ctx), "missing exception-entry BD");
     ctx.state_valid_mask = EE_CTX_REQUIRED_STATE;

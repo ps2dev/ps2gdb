@@ -26,7 +26,10 @@
 #define EE_CTX_VALID_FPU (1u << 3)
 #define EE_CTX_VALID_THREAD (1u << 4)
 #define EE_CTX_VALID_ENTRY_BD (1u << 5)
-#define EE_CTX_REQUIRED_STATE 0x3fu
+#define EE_CTX_VALID_FPU_ACC (1u << 6)
+#define EE_CTX_VALID_HILO_WIDTH (1u << 7)
+#define EE_CTX_REQUIRED_STATE 0xffu
+#define EE_CTX_CU1 (1u << 29)
 
 #ifndef __ASSEMBLY__
 #include <stdint.h>
@@ -94,6 +97,12 @@ static inline uint32_t ee_context_cause_value(const ee_context_candidate *ctx)
 static inline uint32_t ee_context_status_value(const ee_context_candidate *ctx)
 {
     return ctx->status;
+}
+
+/* An invocation-time CU1 bit allows COP1 reads but proves no thread owner. */
+static inline int ee_context_can_sample_fpu(uint32_t status)
+{
+    return (status & EE_CTX_CU1) != 0;
 }
 
 /* A validated entry provider must set the masks; the prototype does not. */

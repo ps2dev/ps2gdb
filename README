@@ -117,6 +117,27 @@ PS2Link remained responsive to host pings after both sessions. These
 smoke tests do not establish preemptive interruption or comprehensive
 stepping/breakpoint coverage in arbitrary applications.
 
+COP1 FCSR capture and resume:
+  The EE exception stub saves FCSR/FIR with CFC1 and restores FCSR with
+  CTC1 after restoring FPRs and ACC. This is part of the normal build;
+  there is no experimental runtime switch.
+
+  A separate opt-in sample can verify the behavior without an L2 hardware
+  comparator or asynchronous Ctrl-C receiver:
+    make clean
+    make PS2GDB_FCSR_DIAG=1 all
+    sh tests/check_fcsr_assembly.sh ee/gdb-low.o
+    mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep ps2gdb_fcsr_
+
+  After loading that sample with PS2Link in a fresh EE user-thread slot,
+  connect GNU GDB and continue to the first software BREAK. Inspect FCSR
+  with 'maintenance packet p46' and compare its low 32 bits with
+  ps2gdb_fcsr_expected; continue to the second BREAK and compare
+  ps2gdb_fcsr_after. The sample prints PS2GDB_FCSR_DIAG status=0 when
+  both values match, and restores its original control value afterward.
+  If CU1 is disabled, the diagnostic skips its stops and logs that fact.
+  This test must be run manually: CI only compiles and audits it.
+
 CI validation (no physical PS2 required):
   make clean all check check-gdb check-install
   make clean debug

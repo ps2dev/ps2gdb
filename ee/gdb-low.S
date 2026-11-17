@@ -115,10 +115,10 @@ trap_low:
 		swc1	$30,GDB_FR_FPR30(k0)
 		swc1	$31,GDB_FR_FPR31(k0)
 
-		// FPU control registers
-		mfc1	v0,CP1_STATUS
+		// FCSR and FIR are COP1 control registers, not FPR31/FPR0.
+		cfc1	v0,CP1_STATUS
 		sw		v0,GDB_FR_FSR(k0)
-		mfc1	v0,CP1_REVISION
+		cfc1	v0,CP1_REVISION
 		sw		v0,GDB_FR_FIR(k0)
 
 2:
@@ -296,6 +296,10 @@ faked_ra:
 		lwc1	$2,GDB_FR_FPR2(k0)
 		lwc1	$1,GDB_FR_FPR1(k0)
 		lwc1	$0,GDB_FR_FPR0(k0)
+		// ACC reconstruction and FPR loads may modify floating-point
+		// status flags. Restore FCSR last, before returning to the target.
+		lw		v0,GDB_FR_FSR(k0)
+		ctc1	v0,CP1_STATUS
 
 
 		// CP0 and integer registers

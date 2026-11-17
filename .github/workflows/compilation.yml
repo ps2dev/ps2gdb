@@ -57,6 +57,17 @@ jobs:
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_word'
           mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'gdb_hw_test_function'
           sh tests/check_hw_direct_cache_flush.sh sample/testgdb.elf
+          sh tests/check_fcsr_assembly.sh ee/gdb-low.o
+          # The test ELF has two controlled software BREAKs. This does not
+          # enable the asynchronous receiver or the hardware L2 comparator.
+          make clean
+          make PS2GDB_FCSR_DIAG=1 all
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'ps2gdb_fcsr_expected'
+          mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'ps2gdb_fcsr_after'
+          sh tests/check_fcsr_assembly.sh ee/gdb-low.o
+          make clean
+          make all
+          ! mips64r5900el-ps2-elf-nm sample/testgdb.elf | grep -q 'ps2gdb_fcsr_expected'
 
   preemptive-context-probe-build:
     name: EE preemptive context observation (compile-only)
@@ -66,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install build requirements
         run: apk add build-base git
-      - name: Build VBlank context and branch-delay probes, never execute in CI
+      - name: Build VBlank context, branch-delay and owner-observation probes; never execute
         run: |
           make preemptive-probe-build
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_probe_busy_begin'
@@ -74,17 +85,41 @@ jobs:
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_dec'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_branch'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_branch_loop_delay'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_owner_probe.elf | grep -q 'ps2gdb_owner_busy_begin'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_owner_probe.elf | grep -q 'ps2gdb_owner_busy_end'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_sched_busy_begin'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_sched_busy_end'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ps2gdb_suspend_loop_begin'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ResumeThread'
           mips64r5900el-ps2-elf-nm tests/preemptive/ee_context_candidate.o | grep -q 'ee_context_candidate_only'
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_stop_policy_compile_only.o | grep -q 'ps2gdb_stop_policy_compile_only'
           mips64r5900el-ps2-elf-objdump -d tests/preemptive/ee_context_candidate.o > /tmp/ee_context_candidate.dis
           test "$(grep -c -E '[[:space:]]sq[[:space:]].*\(k0\)' /tmp/ee_context_candidate.dis)" -eq 32
           grep -q 'sq[[:space:]]*ra,496(k0)' /tmp/ee_context_candidate.dis
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ee_context_candidate_only'
           ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ee_context_candidate_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_interrupt_context_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_branch_delay_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_owner_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          ! mips64r5900el-ps2-elf-nm tests/preemptive/ee_thread_suspend_probe.elf | grep -q 'ps2gdb_stop_policy_compile_only'
+          # The alternative scheduling probe is a separate opt-in build;
+          # compile it without running it or touching a live debug target.
+          make -C tests/preemptive clean
+          make -C tests/preemptive PS2GDB_SCHED_TARGET_PRIORITY=2 ee_receiver_schedule_probe.elf
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ChangeThreadPriority'
+          make -C tests/preemptive clean
+          make -C tests/preemptive PS2GDB_SCHED_OBSERVER_PRIORITY=0 ee_receiver_schedule_probe.elf
+          mips64r5900el-ps2-elf-nm tests/preemptive/ee_receiver_schedule_probe.elf | grep -q 'ReferThreadStatus'
           # The standalone probes must be cleaned by the root clean target.
           make -C tests/preemptive clean
           test ! -e tests/preemptive/ee_interrupt_context_probe.elf
           test ! -e tests/preemptive/ee_branch_delay_probe.elf
           test ! -e tests/preemptive/ee_context_candidate.o
+          test ! -e tests/preemptive/ee_thread_owner_probe.elf
+          test ! -e tests/preemptive/ee_receiver_schedule_probe.elf
+          test ! -e tests/preemptive/ee_thread_suspend_probe.elf
+          test ! -e tests/preemptive/ee_stop_policy_compile_only.o
 
   cooperative-ctrlc-build:
     name: EE cooperative Ctrl-C compile-only
