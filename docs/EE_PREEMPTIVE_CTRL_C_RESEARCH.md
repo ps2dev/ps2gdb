@@ -408,10 +408,33 @@ based solely on these observations.
 Build with make preemptive-probe-build; PCSX2 can boot the owner-observation
 ELF using -elf and -bios with a locally configured BIOS. The probe ends in
 SleepThread() and the emulator must be stopped manually afterward.
-Physical-hardware behavior is not validated: the VBlank _iGetThreadId()
-call requires a controlled real-console test before relying on it.
-The PS2Link host ping to 192.168.31.10 was unreachable during this
-investigation; no physical ELF, reset or kernel modification was attempted.
+
+On November 17, 2026, PS2Link at 192.168.31.10 responded to host ping in
+25 ms, and the same standalone owner-observation ELF completed on a real
+PS2 with the following output:
+
+<!-- markdownlint-disable MD013 -->
+```text
+PS2GDB_OWNER_PROBE_PHASE phase=1 expected=15 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=00101178 last_pc=0010117c iterations=5055121
+PS2GDB_OWNER_PROBE_PHASE phase=2 expected=17 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=0010117c last_pc=0010115c iterations=5443616
+PS2GDB_OWNER_PROBE_DONE status=0 worker=17
+```
+<!-- markdownlint-enable MD013 -->
+
+PS2Link continued to answer host ping afterward (23 ms). The probe
+disables and removes its VBlank callback before reporting completion,
+then enters SleepThread() rather than returning to the OSD. No IOP reset,
+kernel vector replacement, BPC comparator or GDB interruption was
+performed. The PS2Link EE user-thread slot is occupied by this sleeping
+probe until the operator prepares a fresh launcher session.
+
+These 24 matching observations demonstrate that _iGetThreadId() agrees
+with the known executing EE thread in these two controlled, sequential
+busy loops on one physical console. They do not prove level-2 debug
+exception ownership, a trustworthy register frame, uninterrupted
+exclusivity after the callback, or correct context restoration.
+The separate scheduling probe and its priority variants have NOT yet
+been run on physical hardware.
 
 ### EE receiver scheduling under an unyielding target
 
