@@ -364,6 +364,88 @@ must validate target selection, full entry-time state and exact-once resume
 separately before connecting the already-merged cooperative receiver to
 preemptive hardware stops.
 
+### Read-only interrupt-time thread identity observation
+
+The separate EE owner-observation probe in tests/preemptive compares the
+kernel's _iGetThreadId() result inside a VBlank callback with the known IDs
+of two EE threads. Each runs a CPU-bound loop without GDB polling or
+yielding. The callback also records the opaque application PC supplied by
+the dispatcher without dereferencing it. It never installs a hardware
+comparator, GDB stop, context patch or replacement exception vector.
+The native C test checks matched, other, unknown and out-of-range cases.
+
+The first isolated PCSX2 2.9.146 run (EE recompiler) produced:
+
+<!-- markdownlint-disable MD013 -->
+```text
+PS2GDB_OWNER_PROBE_BEGIN main=1
+PS2GDB_OWNER_PROBE_PHASE phase=1 expected=1 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=00101158 last_pc=00101158 iterations=3904373
+PS2GDB_OWNER_PROBE_PHASE phase=2 expected=3 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=00101174 last_pc=00101174 iterations=3934068
+PS2GDB_OWNER_PROBE_DONE status=0 worker=3
+```
+<!-- markdownlint-enable MD013 -->
+
+The same probe also passed in the PCSX2 EE interpreter, using an isolated
+game-configuration override with the EE recompiler disabled:
+
+<!-- markdownlint-disable MD013 -->
+```text
+PS2GDB_OWNER_PROBE_BEGIN main=1
+PS2GDB_OWNER_PROBE_PHASE phase=1 expected=1 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=00101170 last_pc=00101170 iterations=3578632
+PS2GDB_OWNER_PROBE_PHASE phase=2 expected=3 samples=12 matches=12 other=0 unknown=0 outside=0 first_pc=00101170 last_pc=00101170 iterations=3605035
+PS2GDB_OWNER_PROBE_DONE status=0 worker=3
+```
+<!-- markdownlint-enable MD013 -->
+
+This supports that the interrupt-context ID tracks the executing thread
+in this controlled emulator test. It does NOT establish a trustworthy
+interrupt-entry frame, identify the thread from a level-2 debug exception,
+prove exclusive execution after callback return, or make a CPU-wide
+breakpoint safe. The loops run sequentially, not under concurrent network
+load. Do not set trusted_owner or exclusive_target in the stop policy
+based solely on these observations.
+
+Build with make preemptive-probe-build; PCSX2 can boot the owner-observation
+ELF using -elf and -bios with a locally configured BIOS. The probe ends in
+SleepThread() and the emulator must be stopped manually afterward.
+Physical-hardware behavior is not validated: the VBlank _iGetThreadId()
+call requires a controlled real-console test before relying on it.
+The PS2Link host ping to 192.168.31.10 was unreachable during this
+investigation; no physical ELF, reset or kernel modification was attempted.
+
+### EE receiver scheduling under an unyielding target
+
+The separate test in tests/preemptive/ee_receiver_schedule_probe.c runs a
+bounded, CP0 Count-timed CPU loop with no yield or debugger polling. An EE
+observer thread sleeps on a 10-ms kernel timer and records each time it
+actually runs, including whether the target loop was active. The default
+probe does not register interrupt handlers or touch debug registers.
+
+PCSX2 2.9.146 ran this in both EE modes, with the following results:
+
+| Scenario | EE recompiler | EE interpreter |
+| --- | --- | --- |
+| Default target priority 1, observer priority 1 | 0 ticks during loop | 0 ticks during loop |
+| Opt-in target priority 64, observer priority 63 | 26 ticks during loop | 24 ticks during loop |
+
+The priority-change variant is compiled only with the explicit
+PS2GDB_SCHED_LOWER_TARGET_PRIORITY=1 Makefile option. That variant
+changes only the standalone test target, not the debugger or any game.
+Both modes saw five observer ticks before the busy loop. A separate
+emulator-only attempt to rotate the priority-1 ready queue from VBlank
+reported 16 interrupt callbacks without enabling observer execution;
+the unproductive and potentially unsafe queue-rotation code was removed.
+
+The default-priority result is a critical limitation of the current
+dedicated-EE-thread Ctrl-C receiver: the tested target starved an
+equal-priority observer while it never yielded. The positive priority
+variant shows an opt-in lower-priority debug target could make an EE
+receiver schedulable, but such a change alters application scheduling and
+is not an acceptable transparent default. An IOP-originating interrupt
+notification is another candidate, but would need its own transport and
+safe exception handoff. No approach here captures an arbitrary target's
+register frame or proves safe preemptive GDB stop/resume.
+
 ## Build and manually execute
 
 ```sh

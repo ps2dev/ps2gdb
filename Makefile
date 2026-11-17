@@ -11,11 +11,12 @@ all:
 	$(MAKE) -C ee
 	$(MAKE) -C sample
 
-check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_stop_state_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
+check: tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_stop_state_test tests/ee_thread_owner_observation_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
 	./tests/r5900_rsp_test
 	./tests/registers_test
 	./tests/ee_context_candidate_test
 	./tests/ee_stop_state_test
+	./tests/ee_thread_owner_observation_test
 	./tests/ee_bootstrap_vector_audit --self-test
 	./tests/hw_breakpoint_state_test
 	./tests/ctrlc_receiver_state_test
@@ -67,6 +68,9 @@ tests/ee_context_candidate_test: tests/ee_context_candidate_test.c tests/preempt
 tests/ee_stop_state_test: tests/ee_stop_state_test.c tests/preemptive/ee_stop_state.h tests/preemptive/ee_context_candidate.h
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
+tests/ee_thread_owner_observation_test: tests/ee_thread_owner_observation_test.c tests/preemptive/ee_thread_owner_observation.h
+	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
+
 tests/ee_bootstrap_vector_audit: tests/ee_bootstrap_vector_audit.c
 	$(HOST_CC) $(HOST_CFLAGS) $< -o $@
 
@@ -90,4 +94,4 @@ clean:
 	$(MAKE) -C ee clean
 	$(MAKE) -C sample clean
 	$(MAKE) -C tests/preemptive clean
-	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_stop_state_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
+	rm -f tests/r5900_rsp_test tests/registers_test tests/ee_context_candidate_test tests/ee_stop_state_test tests/ee_thread_owner_observation_test tests/ee_bootstrap_vector_audit tests/mock_rsp_server tests/rsp_protocol_test tests/hw_breakpoint_state_test tests/ctrlc_rsp_client tests/ctrlc_receiver_state_test tests/ctrlc_receiver_transport_test
