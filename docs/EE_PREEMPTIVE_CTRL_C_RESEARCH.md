@@ -450,10 +450,14 @@ PCSX2 2.9.146 ran this in both EE modes, with the following results:
 | --- | --- | --- |
 | Default: target 1, observer 1 | 0 ticks | 0 ticks |
 | Opt-in: target 64, observer 63 | 26 ticks | 24 ticks |
+| Opt-in: target 2, observer 1 | 26 ticks | 24 ticks |
 
 The priority-change variant is compiled only with the explicit
 PS2GDB_SCHED_LOWER_TARGET_PRIORITY=1 Makefile option. That variant
 changes only the standalone test target, not the debugger or any game.
+The newer PS2GDB_SCHED_TARGET_PRIORITY=2 option provides an isolated
+target-priority control; in the emulator it also permitted the
+higher-priority observer to run while the target did not yield.
 Both modes saw five observer ticks before the busy loop. A separate
 emulator-only attempt to rotate the priority-1 ready queue from VBlank
 reported 16 interrupt callbacks without enabling observer execution;
@@ -483,9 +487,31 @@ PS2GDB_SCHED_PROBE_DONE started=1 main_priority=1 observer_priority=1 ticks_befo
 PS2Link answered the post-test ping in 17 ms. No hardware debug
 breakpoint, exception-vector replacement or additional reset was used.
 The result confirms on one physical PS2 that an equal-priority observer
-can be starved for the duration of this busy loop. The priority-adjusted
-probe has not yet been run on physical hardware; the default probe is
-now sleeping and holds the EE launch slot.
+can be starved for the duration of this busy loop.
+
+Later on November 17, 2026, after a single operator-authorized reset,
+the priority-64 variant was loaded on the same PS2. No DONE marker was
+received within the 30-second host timeout, so the console-output
+completion check was inconclusive. PS2Link still answered ping. A pair
+of read-only 32-byte EE memory dumps from the ELF's BSS at 0x00127090
+matched byte for byte:
+
+<!-- markdownlint-disable MD013 -->
+```text
+observer_exited=1 observer_shutdown=1 observer_during_busy=26 observer_ticks=31
+busy_iterations=0x0072422a (7488042) busy_active=0
+```
+<!-- markdownlint-enable MD013 -->
+
+The ELF was built with PS2GDB_SCHED_LOWER_TARGET_PRIORITY=1 and thus
+requested target priority 64; the expected observer priority was 63.
+The BSS dump proves that the observer executed during the target's
+busy loop and exited, not that the requested thread priorities were
+successfully applied (their actual values were printed only through
+the missing console marker). The missing console output needs its
+own investigation. PS2Link remained responsive, and neither the
+memory dumps nor this probe modified an EE debug exception vector
+or armed any hardware breakpoint.
 
 ## Build and manually execute
 

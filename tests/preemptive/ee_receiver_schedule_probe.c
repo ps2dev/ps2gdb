@@ -12,6 +12,11 @@
 #define BUSY_COUNT_TICKS 75000000u
 #define OBSERVER_PERIOD_US 10000u
 
+#if defined(PS2GDB_SCHED_TARGET_PRIORITY) && \
+    (PS2GDB_SCHED_TARGET_PRIORITY < 1 || PS2GDB_SCHED_TARGET_PRIORITY > 127)
+#error PS2GDB_SCHED_TARGET_PRIORITY must be in the EE user priority range 1..127
+#endif
+
 static volatile unsigned int busy_active;
 static volatile unsigned int busy_iterations;
 static volatile unsigned int observer_ticks;
@@ -61,8 +66,11 @@ int main(void)
     unsigned int before = 0;
     int attempt;
 
-#ifdef PS2GDB_SCHED_LOWER_TARGET_PRIORITY
-    /* Emulator-only control: changes the target's scheduling priority. */
+#ifdef PS2GDB_SCHED_TARGET_PRIORITY
+    /* Opt-in diagnostic only: changes this test target's priority. */
+    ChangeThreadPriority(TH_SELF, PS2GDB_SCHED_TARGET_PRIORITY);
+#elif defined(PS2GDB_SCHED_LOWER_TARGET_PRIORITY)
+    /* Original diagnostic variant for comparison with earlier evidence. */
     ChangeThreadPriority(TH_SELF, 64);
 #endif
     if (ReferThreadStatus(TH_SELF, &status) >= 0) {
